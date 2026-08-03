@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustLayer SDK — Basic Browser Example</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f0f10;
+      color: #e5e5e5;
+      padding: 40px 20px;
+      min-height: 100vh;
+    }
+    .container { max-width: 640px; margin: 0 auto; }
+    h1 { font-size: 1.5rem; font-weight: 600; color: #fff; margin-bottom: 8px; }
+    p.subtitle { color: #999; font-size: 0.9rem; margin-bottom: 32px; }
+
+    .card {
+      background: #1a1a1b;
+      border: 1px solid #2a2a2b;
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 16px;
+    }
+    .card h2 { font-size: 1rem; font-weight: 500; color: #ccc; margin-bottom: 16px; }
+
+    .score-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .score-box {
+      background: #111;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+    }
+    .score-label { font-size: 0.75rem; color: #666; text-transform: uppercase; letter-spacing: 0.05em; }
+    .score-value { font-size: 2.5rem; font-weight: 700; margin: 8px 0 4px; }
+    .score-status { font-size: 0.8rem; }
+
+    .trust-high   { color: #4ade80; }
+    .trust-med    { color: #facc15; }
+    .trust-low    { color: #f87171; }
+
+    button {
+      background: #6366f1;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      padding: 10px 20px;
+      font-size: 0.9rem;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.15s;
+    }
+    button:hover { background: #4f46e5; }
+    button:disabled { background: #333; color: #666; cursor: not-allowed; }
+
+    .log {
+      background: #111;
+      border-radius: 8px;
+      padding: 12px 16px;
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: #aaa;
+      max-height: 220px;
+      overflow-y: auto;
+      line-height: 1.6;
+    }
+    .log .ok   { color: #4ade80; }
+    .log .warn { color: #facc15; }
+    .log .err  { color: #f87171; }
+
+    .reasons { list-style: none; padding: 0; }
+    .reasons li {
+      padding: 6px 0;
+      border-bottom: 1px solid #222;
+      font-size: 0.85rem;
+      color: #ccc;
+    }
+    .reasons li:last-child { border: none; }
+    .reasons li::before { content: "› "; color: #6366f1; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 100px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: #222;
+      color: #aaa;
+      margin-top: 4px;
+    }
+    .badge.green { background: #052e16; color: #4ade80; }
+    .badge.yellow { background: #2d2200; color: #facc15; }
+    .badge.red { background: #2d0000; color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>TrustLayer SDK Demo</h1>
+    <p class="subtitle">Browser-based trust session with real-time scoring</p>
+
+    <div class="card">
+      <h2>Session Control</h2>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <button id="btnStart" onclick="startSession()">Start Trust Session</button>
+        <button id="btnEval" onclick="evaluateSession()" disabled>Evaluate Now</button>
+        <button id="btnComplete" onclick="completeSession()" disabled>Complete Session</button>
+      </div>
+      <p style="margin-top:12px;font-size:0.8rem;color:#555;" id="sessionInfo">No active session</p>
+    </div>
+
+    <div class="card" id="scoresCard" style="display:none;">
+      <h2>Trust Intelligence</h2>
+      <div class="score-grid">
+        <div class="score-box">
+          <div class="score-label">Trust Score</div>
+          <div class="score-value" id="trustValue">—</div>
+          <div class="score-status" id="trustStatus"></div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">Risk Score</div>
+          <div class="score-value" id="riskValue">—</div>
+          <div class="score-status" id="riskLevel"></div>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <div style="font-size:0.75rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Recommendation</div>
+        <span class="badge" id="recommendationBadge">—</span>
+      </div>
+      <div style="margin-top:16px;">
+        <div style="font-size:0.75rem;color:#666;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:8px;">Explanation</div>
+        <ul class="reasons" id="reasonsList"></ul>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Activity Log</h2>
+      <div class="log" id="log">
+        <span class="ok">TrustLayer SDK ready.</span><br/>
+        <span>Replace YOUR_API_KEY with your tl_public_xxx key to connect.</span>
+      </div>
+    </div>
+  </div>
+
+  <!--
+    In production: replace with your actual built SDK bundle.
+    e.g. <script src="/dist/index.js"></script>
+    For this demo, we use a minimal inline implementation.
+  -->
+  <script>
+    // ── Minimal inline SDK stub for demo ──────────────────────────────────────
+    // Replace this block with: import TrustLayer from '@trustlayer/sdk'
+    // or <script src="dist/index.js"> after building.
+
+    const API_KEY  = 'tl_public_YOUR_KEY_HERE';
+    const API_BASE = 'http://localhost:8080';
+
+    let currentSessionId = null;
+    let monitorInterval  = null;
+    let windowSwitches   = 0;
+    let mouseEvents      = 0;
+    let keystrokes       = 0;
+
+    // Track browser signals
+    document.addEventListener('mousemove', () => mouseEvents++);
+    document.addEventListener('keydown',   () => keystrokes++);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        windowSwitches++;
+        log(`⚠ Window switch detected (total: ${windowSwitches})`, 'warn');
+        if (currentSessionId) sendEvent('window_switch', { count: windowSwitches });
+      }
+    });
+
+    async function apiCall(method, path, body) {
+      const res = await fetch(API_BASE + path, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + API_KEY,
+        },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ message: res.statusText }));
+        throw new Error(err.message || res.statusText);
+      }
+      return res.json();
+    }
+
+    async function startSession() {
+      try {
+        log('Creating trust session...');
+        const sess = await apiCall('POST', '/v1/sessions', {
+          type: 'user_verification',
+          modules: ['fraud', 'bot_detection', 'anomaly'],
+        });
+        currentSessionId = sess.id;
+        document.getElementById('sessionInfo').textContent =
+          `Session: ${sess.id} | Status: ${sess.status}`;
+        document.getElementById('btnStart').disabled    = true;
+        document.getElementById('btnEval').disabled     = false;
+        document.getElementById('btnComplete').disabled = false;
+
+        log(`✓ Session created: ${sess.id}`, 'ok');
+
+        // Send initial device event
+        await sendEvent('device_change', {
+          user_agent:   navigator.userAgent,
+          platform:     navigator.platform,
+          language:     navigator.language,
+          timezone:     Intl.DateTimeFormat().resolvedOptions().timeZone,
+          is_initial:   true,
+        });
+
+        // Poll for score updates every 10s
+        monitorInterval = setInterval(evaluateSession, 10000);
+      } catch (e) {
+        log(`✗ ${e.message}`, 'err');
+      }
+    }
+
+    async function sendEvent(type, data) {
+      if (!currentSessionId) return;
+      try {
+        await apiCall('POST', '/v1/events', {
+          session_id: currentSessionId,
+          type,
+          data,
+        });
+      } catch (e) {
+        log(`⚠ Event send failed: ${e.message}`, 'warn');
+      }
+    }
+
+    async function evaluateSession() {
+      if (!currentSessionId) return;
+      try {
+        // Send latest behavioral signals before evaluating
+        await sendEvent('mouse_activity', { mouse_movements: mouseEvents });
+        if (keystrokes > 0) {
+          await sendEvent('typing_pattern', { keystrokes });
+        }
+
+        const result = await apiCall('POST', '/v1/evaluate', {
+          session_id: currentSessionId,
+        });
+
+        showScores(result);
+        log(`Evaluation: trust=${result.trust_score.trust_score.toFixed(0)}, risk=${result.risk_score.risk_score.toFixed(0)}, rec=${result.recommendation}`, 'ok');
+      } catch (e) {
+        log(`✗ Evaluation error: ${e.message}`, 'err');
+      }
+    }
+
+    async function completeSession() {
+      if (!currentSessionId) return;
+      clearInterval(monitorInterval);
+      try {
+        await sendEvent('session_ended', { window_switches: windowSwitches, keystrokes });
+        const result = await apiCall('POST', `/v1/sessions/${currentSessionId}/complete`);
+        showScores(result);
+        log(`✓ Session completed. Final trust: ${result.trust_score.trust_score.toFixed(0)}`, 'ok');
+
+        document.getElementById('btnComplete').disabled = true;
+        document.getElementById('btnEval').disabled     = true;
+        document.getElementById('btnStart').disabled    = false;
+        document.getElementById('sessionInfo').textContent = 'Session completed';
+        currentSessionId = null;
+      } catch (e) {
+        log(`✗ Complete error: ${e.message}`, 'err');
+      }
+    }
+
+    function showScores(result) {
+      document.getElementById('scoresCard').style.display = 'block';
+
+      const trust = result.trust_score.trust_score;
+      const risk  = result.risk_score.risk_score;
+
+      const trustEl = document.getElementById('trustValue');
+      trustEl.textContent = Math.round(trust);
+      trustEl.className = 'score-value ' + (trust >= 70 ? 'trust-high' : trust >= 40 ? 'trust-med' : 'trust-low');
+
+      const riskEl = document.getElementById('riskValue');
+      riskEl.textContent = Math.round(risk);
+      riskEl.className = 'score-value ' + (risk <= 20 ? 'trust-high' : risk <= 50 ? 'trust-med' : 'trust-low');
+
+      document.getElementById('trustStatus').textContent = result.trust_score.status?.replace(/_/g, ' ') ?? '';
+      document.getElementById('riskLevel').textContent   = result.risk_score.level ?? '';
+
+      const badge = document.getElementById('recommendationBadge');
+      badge.textContent = result.recommendation ?? '—';
+      badge.className = 'badge ' + {
+        allow: 'green', monitor: 'green', verify: 'yellow',
+        review: 'yellow', block: 'red',
+      }[result.recommendation] ?? '';
+
+      const list = document.getElementById('reasonsList');
+      list.innerHTML = '';
+      const items = [...(result.explanation ?? [])].slice(0, 6);
+      items.forEach(r => {
+        const li = document.createElement('li');
+        li.textContent = r;
+        list.appendChild(li);
+      });
+    }
+
+    function log(msg, cls) {
+      const el = document.getElementById('log');
+      const line = document.createElement('span');
+      if (cls) line.className = cls;
+      line.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+      el.appendChild(line);
+      el.appendChild(document.createElement('br'));
+      el.scrollTop = el.scrollHeight;
+    }
+  </script>
+</body>
+</html>
