@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "trustlayer"
+version = "0.1.0"
+description = "TrustLayer SDK — trust infrastructure for the AI-native internet"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["trust", "fraud", "deepfake", "bot-detection", "security", "ai"]
+authors = [{ name = "TrustLayer" }]
+
+dependencies = [
+    "httpx>=0.27.0",
+    "pydantic>=2.6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.1.0",
+    "pytest-asyncio>=0.23.5",
+    "respx>=0.21.1",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["trustlayer"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
