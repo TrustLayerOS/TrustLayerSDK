@@ -1,115 +1,108 @@
 import { TrustSession } from "../session";
+import { extractAudioFeatures, extractFrameFeatures, type FrameSample } from "../signals/media";
+import type { EvaluationResponse } from "../api/types";
 
 export interface DeepfakeVideoResult {
   deepfakeProbability: number;
   confidence: number;
   status: "likely_real" | "suspicious" | "likely_deepfake";
+  reasons?: string[];
 }
 
 export interface DeepfakeAudioResult {
   syntheticProbability: number;
   confidence: number;
+  reasons?: string[];
 }
 
 /**
- * DeepfakeShield — detects synthetic or manipulated media.
+ * DeepfakeShield — sends forensic frame/audio features to TrustLayerOS.
  */
 export class DeepfakeShield {
   constructor(private readonly session: TrustSession) {}
 
   /**
-   * Analyzes a video frame for deepfake signals.
-   * Pass an ImageData object or a base64-encoded JPEG string.
-   *
-   * The frame features are extracted client-side and sent as signals
-   * to TrustLayerOS for ML inference.
+   * Analyze a video frame. Pass ImageData, a FrameSample, or a precomputed feature vector.
    */
   async analyzeVideoFrame(
-    frameData: ImageData | string
+    frameData: ImageData | FrameSample | number[] | string
   ): Promise<DeepfakeVideoResult> {
-    const features = extractFrameFeatures(frameData);
+    const features = toVideoFeatures(frameData);
 
-    // Send features to TrustLayerOS as a deepfake event
-    await this.session.trackEvent("deepfake_detected", {
+    await this.session.trackEvent("face_frame", {
       analysis_type: "video",
       ml_features: features,
       frame_analyzed: true,
     });
 
-    // The actual ML inference runs server-side; get result via risk score
-    const risk = await this.session.getRiskScore();
-    const contentRisk = risk.dimensions?.content_risk ?? 0;
-    const prob = contentRisk / 100;
+    const evaluation = await this.session.evaluate(["deepfake", "interview", "bot"]);
+    const df = evaluation.modules?.deepfake;
+    const prob = df?.deepfake_probability ?? evaluation.deepfake_risk ?? 0;
 
     return {
       deepfakeProbability: Math.round(prob * 1000) / 1000,
-      confidence: risk.confidence,
+      confidence: df?.confidence ?? evaluation.confidence,
       status:
-        prob < 0.2 ? "likely_real" : prob < 0.6 ? "suspicious" : "likely_deepfake",
+        (df?.status as DeepfakeVideoResult["status"]) ??
+        (prob < 0.2 ? "likely_real" : prob < 0.6 ? "suspicious" : "likely_deepfake"),
+      reasons: df?.reasons ?? evaluation.reasons,
     };
   }
 
   /**
-   * Analyzes audio features for synthetic speech indicators.
+   * Analyze PCM / analyser audio. Pass a feature vector from extractAudioFeatures,
+   * or a Float32Array time-domain buffer.
    */
   async analyzeAudio(
-    audioFeatures: number[]
+    audio: number[] | Float32Array
   ): Promise<DeepfakeAudioResult> {
-    await this.session.trackEvent("voice_verified", {
-      ml_features: audioFeatures,
+    const features = Array.isArray(audio)
+      ? audio
+      : extractAudioFeatures(audio);
+
+    await this.session.trackEvent("voice_liveness", {
+      ml_features: features,
+      analysis_type: "audio",
+    });
+    await this.session.trackEvent("voice_clone_risk", {
+      ml_features: features,
       analysis_type: "audio",
     });
 
-    const risk = await this.session.getRiskScore();
-    const contentRisk = risk.dimensions?.content_risk ?? 0;
-    const syntheticProb = contentRisk / 100;
+    const evaluation = await this.session.evaluate(["deepfake"]);
+    const df = evaluation.modules?.deepfake;
+    const synthetic = df?.voice_clone_risk ?? df?.deepfake_probability ?? evaluation.deepfake_risk ?? 0;
 
     return {
-      syntheticProbability: Math.round(syntheticProb * 1000) / 1000,
-      confidence: risk.confidence,
+      syntheticProbability: Math.round(synthetic * 1000) / 1000,
+      confidence: df?.confidence ?? evaluation.confidence,
+      reasons: df?.reasons ?? evaluation.reasons,
     };
   }
 }
 
-/**
- * Extracts lightweight feature vector from video frame data.
- * Returns a compact representation suitable for ML inference.
- */
-function extractFrameFeatures(frameData: ImageData | string): number[] {
+function toVideoFeatures(
+  frameData: ImageData | FrameSample | number[] | string
+): number[] {
+  if (Array.isArray(frameData)) {
+    return frameData;
+  }
   if (typeof frameData === "string") {
-    // Base64 string — derive features from length and content hash
-    const hash = simpleHash(frameData);
-    return [
-      frameData.length / 10000,
-      (hash & 0xff) / 255,
-      ((hash >> 8) & 0xff) / 255,
-      ((hash >> 16) & 0xff) / 255,
-    ];
+    // Last-resort path for callers who still pass a data URL — hash is not a detector.
+    // Prefer ImageData / FrameSample.
+    const n = frameData.length;
+    const vec = new Array(32).fill(0);
+    vec[0] = Math.min(1, n / 200000);
+    vec[31] = 0.4;
+    return vec;
   }
-
-  // ImageData — compute basic statistics over pixel values
-  const data = frameData.data;
-  const pixels = data.length / 4;
-  let rSum = 0, gSum = 0, bSum = 0;
-
-  for (let i = 0; i < data.length; i += 4) {
-    rSum += data[i];
-    gSum += data[i + 1];
-    bSum += data[i + 2];
-  }
-
-  const rMean = rSum / pixels / 255;
-  const gMean = gSum / pixels / 255;
-  const bMean = bSum / pixels / 255;
-
-  return [rMean, gMean, bMean, frameData.width / 1920, frameData.height / 1080];
+  const sample: FrameSample = {
+    width: frameData.width,
+    height: frameData.height,
+    data: frameData.data as Uint8ClampedArray,
+    timestamp: Date.now(),
+  };
+  return extractFrameFeatures(sample);
 }
 
-function simpleHash(s: string): number {
-  let hash = 0;
-  for (let i = 0; i < Math.min(s.length, 1000); i++) {
-    hash = (hash << 5) - hash + s.charCodeAt(i);
-    hash |= 0;
-  }
-  return Math.abs(hash);
-}
+export type { EvaluationResponse };

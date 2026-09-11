@@ -13,6 +13,13 @@ import { collectDeviceSignals } from "./signals/device";
 import { collectNetworkSignals } from "./signals/network";
 import { collectIdentitySignals } from "./signals/identity";
 import { Logger } from "./utils/logger";
+import {
+  createMediaSampler,
+  extractFrameFeatures,
+  isBrowser,
+  type FrameSample,
+} from "./signals/media";
+import { runLivenessChallenge, type LivenessPrompt } from "./modules/liveness";
 
 export interface CreateSessionOptions {
   type: SessionType;
@@ -20,6 +27,13 @@ export interface CreateSessionOptions {
   modules?: TrustModule[];
   riskThreshold?: number;
   metadata?: Record<string, unknown>;
+}
+
+export interface VerifyHumanOptions {
+  liveness?: boolean;
+  video?: boolean;
+  audio?: boolean;
+  onPrompt?: (prompt: LivenessPrompt) => void;
 }
 
 /**
@@ -163,9 +177,66 @@ export class TrustSession {
     return this.apiClient.getRiskScore(this.sessionId);
   }
 
-  async evaluate(): Promise<EvaluationResponse> {
+  async evaluate(modules?: string[]): Promise<EvaluationResponse> {
     await this.emitter.flush();
-    return this.apiClient.evaluate(this.sessionId);
+    return this.apiClient.evaluate(this.sessionId, modules);
+  }
+
+  /**
+   * Capture live camera/mic (browser), run a liveness challenge, send
+   * forensic features, then return POST /v1/evaluate.
+   */
+  async verifyHuman(options: VerifyHumanOptions = {}): Promise<EvaluationResponse> {
+    const liveness = options.liveness !== false;
+    const video = options.video !== false;
+    const audio = options.audio !== false;
+
+    if (liveness) {
+      await runLivenessChallenge(this, { onPrompt: options.onPrompt });
+    }
+
+    if ((video || audio) && isBrowser()) {
+      let sampler;
+      try {
+        sampler = await createMediaSampler();
+        await sampler.start({ video, audio });
+        if (video) {
+          let prev: FrameSample | null = null;
+          for (let i = 0; i < 3; i++) {
+            const frame = await sampler.sampleFrame();
+            if (frame) {
+              const features = extractFrameFeatures(frame, prev);
+              await this.trackEvent("face_frame", {
+                ml_features: features,
+                sample_index: i,
+              });
+              prev = frame;
+            }
+            await new Promise((r) => setTimeout(r, 250));
+          }
+        }
+        if (audio) {
+          const feats = await sampler.sampleAudio(700);
+          if (feats) {
+            await this.trackEvent("voice_liveness", { ml_features: feats });
+          }
+        }
+      } catch (err) {
+        await this.trackEvent("liveness_challenge_failed", {
+          reason: "no_camera",
+          error: err instanceof Error ? err.message : String(err),
+        });
+      } finally {
+        sampler?.stop();
+      }
+    } else if ((video || audio) && !isBrowser()) {
+      await this.trackEvent("custom", {
+        signal_type: "verify_human",
+        note: "media capture requires a browser; send face_frame / voice_liveness events from your app",
+      });
+    }
+
+    return this.evaluate(["interview", "deepfake", "bot"]);
   }
 
   async complete(): Promise<EvaluationResponse> {

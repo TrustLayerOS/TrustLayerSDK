@@ -69,6 +69,18 @@ export class InterviewShield {
    * Get the current interview integrity score.
    */
   async getIntegrityScore(): Promise<InterviewIntegrityResult> {
+    const evaluation = await this.session.evaluate(["interview", "deepfake", "bot"]);
+    const iv = evaluation.modules?.interview;
+    if (iv) {
+      return {
+        integrityScore: iv.integrity_score,
+        riskFactors: iv.risk_factors,
+        aiAssistanceProbability: iv.ai_assistance_probability,
+        identityConsistency: iv.identity_consistency,
+        recommendation: iv.recommendation as InterviewIntegrityResult["recommendation"],
+      };
+    }
+
     const [trust, risk] = await Promise.all([
       this.session.getTrustScore(),
       this.session.getRiskScore(),

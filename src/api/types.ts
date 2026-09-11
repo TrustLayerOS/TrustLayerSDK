@@ -69,13 +69,46 @@ export interface RiskScoreResponse {
   };
 }
 
+export interface EvaluationModules {
+  interview?: {
+    integrity_score: number;
+    ai_assistance_probability: number;
+    identity_consistency: number;
+    risk_factors: string[];
+    recommendation: string;
+  };
+  deepfake?: {
+    deepfake_probability: number;
+    confidence: number;
+    status: string;
+    replay_risk?: number;
+    voice_clone_risk?: number;
+    liveness_passed?: boolean;
+    reasons?: string[];
+  };
+  bot?: {
+    bot_probability: number;
+    human_probability: number;
+    is_bot: boolean;
+    confidence: number;
+    signals: string[];
+  };
+}
+
 export interface EvaluationResponse {
   session_id: string;
+  human_probability: number;
+  deepfake_risk: number;
+  integrity_score: number;
+  recommendation: "allow" | "monitor" | "verify" | "review" | "block";
+  reasons: string[];
+  confidence: number;
   trust_score: TrustScoreResponse;
   risk_score: RiskScoreResponse;
-  recommendation: "allow" | "monitor" | "verify" | "review" | "block";
   explanation: string[];
   policy_actions?: string[];
+  modules?: EvaluationModules;
+  created_at?: string;
 }
 
 // ─── Errors ───────────────────────────────────────────────────────────────────

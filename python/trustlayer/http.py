@@ -21,7 +21,7 @@ from .exceptions import (
 T = TypeVar("T", bound=BaseModel)
 
 DEFAULT_API_URL = "https://api.trustlayer.dev"
-DEFAULT_TIMEOUT = 10.0
+DEFAULT_TIMEOUT = 20.0
 SDK_VERSION = "python/0.1.0"
 
 # HTTP status codes that warrant a retry

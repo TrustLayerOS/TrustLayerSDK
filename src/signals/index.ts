@@ -2,6 +2,16 @@ export { collectDeviceSignals, type DeviceSignals } from "./device";
 export { BehaviorCollector, type BehaviorSignals } from "./behavior";
 export { collectNetworkSignals, type NetworkSignals } from "./network";
 export { collectIdentitySignals, type IdentitySignals } from "./identity";
+export {
+  extractFrameFeatures,
+  extractAudioFeatures,
+  createMediaSampler,
+  motionFromFrames,
+  isBrowser,
+  type FrameSample,
+  type MotionSummary,
+  type LivenessChallenge,
+} from "./media";
 
 import { collectDeviceSignals, DeviceSignals } from "./device";
 import { collectNetworkSignals, NetworkSignals } from "./network";

@@ -77,9 +77,25 @@ class InterviewShield:
 
     def get_integrity_score(self) -> IntegrityResult:
         """
-        Compute the current interview integrity score.
-        Returns a structured result with recommendation.
+        Compute the current interview integrity score from /v1/evaluate.
         """
+        evaluation: EvaluationResponse = self._session.evaluate(
+            modules=["interview", "deepfake", "bot"]
+        )
+        iv = (evaluation.modules.interview if evaluation.modules else None) or {}
+        if iv:
+            rec = iv.get("recommendation", "review")
+            if rec not in ("pass", "review", "flag"):
+                rec = "review"
+            rec_lit: Literal["pass", "review", "flag"] = rec  # type: ignore[assignment]
+            return IntegrityResult(
+                integrity_score=float(iv.get("integrity_score", evaluation.integrity_score)),
+                ai_assistance_probability=float(iv.get("ai_assistance_probability", 0)),
+                identity_consistency=float(iv.get("identity_consistency", 0)),
+                risk_factors=list(iv.get("risk_factors") or evaluation.reasons),
+                recommendation=rec_lit,
+            )
+
         trust: TrustScoreResponse = self._session.get_trust_score()
         risk: RiskScoreResponse = self._session.get_risk_score()
 

@@ -103,13 +103,26 @@ class RiskScoreResponse(BaseModel):
     dimensions: Optional[RiskDimensions] = None
 
 
+class EvaluationModules(BaseModel):
+    interview: Optional[dict[str, Any]] = None
+    deepfake: Optional[dict[str, Any]] = None
+    bot: Optional[dict[str, Any]] = None
+
+
 class EvaluationResponse(BaseModel):
     session_id: str
+    human_probability: float = 0
+    deepfake_risk: float = 0
+    integrity_score: float = 0
+    recommendation: Literal["allow", "monitor", "verify", "review", "block"]
+    reasons: list[str] = Field(default_factory=list)
+    confidence: float = 0
     trust_score: TrustScoreResponse
     risk_score: RiskScoreResponse
-    recommendation: Literal["allow", "monitor", "verify", "review", "block"]
     explanation: list[str] = Field(default_factory=list)
     policy_actions: Optional[list[str]] = None
+    modules: Optional[EvaluationModules] = None
+    created_at: Optional[str] = None
 
 
 # ─── Auth ─────────────────────────────────────────────────────────────────────

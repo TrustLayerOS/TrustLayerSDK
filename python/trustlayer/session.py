@@ -111,6 +111,39 @@ class TrustSession:
             response_model=EvaluationResponse,
         )
 
+    def verify_human(
+        self,
+        *,
+        liveness_passed: Optional[bool] = None,
+        video_features: Optional[list[float]] = None,
+        audio_features: Optional[list[float]] = None,
+        challenge: str = "external",
+        modules: Optional[list[str]] = None,
+    ) -> EvaluationResponse:
+        """
+        Server-side human check. The Python SDK cannot open a webcam; pass
+        features captured by your app (or the JS SDK) then evaluate.
+
+        :param liveness_passed: Result of your liveness challenge.
+        :param video_features: Forensic frame vector (see extract_frame_features).
+        :param audio_features: Spectral voice vector.
+        """
+        if liveness_passed is True:
+            self.track_event(
+                "liveness_challenge_passed",
+                {"challenge": challenge, "passed_client": True},
+            )
+        elif liveness_passed is False:
+            self.track_event(
+                "liveness_challenge_failed",
+                {"challenge": challenge, "passed_client": False},
+            )
+        if video_features:
+            self.track_event("face_frame", {"ml_features": video_features})
+        if audio_features:
+            self.track_event("voice_liveness", {"ml_features": audio_features})
+        return self.evaluate(modules or ["interview", "deepfake", "bot"])
+
     def complete(self) -> EvaluationResponse:
         """
         Finalise the session. Computes the final evaluation, updates

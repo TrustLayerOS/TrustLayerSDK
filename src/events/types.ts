@@ -13,6 +13,12 @@ export type EventType =
   | "browser_changed"
   | "session_started"
   | "session_ended"
+  | "liveness_challenge_started"
+  | "liveness_challenge_passed"
+  | "liveness_challenge_failed"
+  | "face_frame"
+  | "voice_liveness"
+  | "voice_clone_risk"
   | "custom";
 
 export interface TrustEvent {

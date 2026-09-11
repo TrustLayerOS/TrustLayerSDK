@@ -35,6 +35,9 @@ from .modules import (
     BotResult,
     AnomalyShield,
     AnomalyResult,
+    DeepfakeShield,
+    DeepfakeVideoResult,
+    DeepfakeAudioResult,
 )
 
 __all__ = [
@@ -56,6 +59,9 @@ __all__ = [
     "BotResult",
     "AnomalyShield",
     "AnomalyResult",
+    "DeepfakeShield",
+    "DeepfakeVideoResult",
+    "DeepfakeAudioResult",
 ]
 
 __version__ = "0.1.0"
