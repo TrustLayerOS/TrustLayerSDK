@@ -208,6 +208,7 @@ export class TrustSession {
               const features = extractFrameFeatures(frame, prev);
               await this.trackEvent("face_frame", {
                 ml_features: features,
+                image_b64: sampler.sampleJpeg() ?? undefined,
                 sample_index: i,
               });
               prev = frame;

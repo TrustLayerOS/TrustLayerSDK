@@ -11,6 +11,19 @@ TrustLayer lets your application understand every digital interaction:
 
 ---
 
+## Laptop media demo
+
+The live camera / mic detectors are served by TrustLayerOS, not this package.
+
+```powershell
+# in TrustLayerOS
+powershell -ExecutionPolicy Bypass -File ml\run_demo.ps1
+```
+
+Open **http://127.0.0.1:8001/demo**. `examples/verify-human.html` is a shortcut to that page.
+
+---
+
 ## Installation
 
 ```bash

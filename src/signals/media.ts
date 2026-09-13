@@ -24,6 +24,7 @@ export interface MotionSummary {
 export interface MediaSampler {
   start(opts?: { audio?: boolean; video?: boolean }): Promise<void>;
   sampleFrame(): Promise<FrameSample | null>;
+  sampleJpeg(quality?: number): string | null;
   sampleAudio(durationMs?: number): Promise<number[] | null>;
   stop(): void;
 }
@@ -45,7 +46,7 @@ export async function createMediaSampler(): Promise<MediaSampler> {
   return {
     async start(opts = { audio: true, video: true }) {
       stream = await navigator.mediaDevices.getUserMedia({
-        video: opts.video === false ? false : { facingMode: "user", width: 320, height: 240 },
+        video: opts.video === false ? false : { facingMode: "user", width: 640, height: 480 },
         audio: opts.audio !== false,
       });
       video = document.createElement("video");
@@ -70,6 +71,17 @@ export async function createMediaSampler(): Promise<MediaSampler> {
         data: image.data,
         timestamp: Date.now(),
       };
+    },
+
+    sampleJpeg(quality = 0.85): string | null {
+      if (!video) return null;
+      const shot = document.createElement("canvas");
+      shot.width = video.videoWidth || 640;
+      shot.height = video.videoHeight || 480;
+      const ctx = shot.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(video, 0, 0, shot.width, shot.height);
+      return shot.toDataURL("image/jpeg", quality);
     },
 
     async sampleAudio(durationMs = 800): Promise<number[] | null> {
