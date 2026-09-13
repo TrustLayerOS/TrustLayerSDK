@@ -4,11 +4,11 @@ The official JavaScript/TypeScript SDK for TrustLayer.
 
 > TrustLayer is the API apps call to know if the other side is a real human — not a deepfake, bot, or synthetic identity — without forcing users to give up privacy.
 
-**Built:** `createSession` → events → `evaluate()` / `verifyHuman()` → `human_probability` + `recommendation`.
+**Built:** `TrustLayer.verifyHuman()` (JS + Python) → `human_probability` + `recommendation`. React `useVerifyHuman()`, Express / Next `requireHuman()`, webhook HMAC that matches OS (`timestamp + "." + body`). Browser IIFE in `dist/trustlayer.iife.global.js`.
 
-**Partial:** browser camera liveness + frame/audio features (requires TrustLayerOS ML). Fraud / bot / anomaly helpers send events; they are not trained models.
+**Partial:** browser camera liveness + frame/audio features (requires TrustLayerOS). Fraud / bot / anomaly helpers send events; they are not trained models.
 
-**Planned:** React hook, route middleware, published npm `0.1` polish.
+**Publish:** package is `0.1.0`. Run `npm publish` / `twine upload` when you have registry tokens — this repo does not publish from CI.
 
 ---
 
@@ -42,28 +42,40 @@ pnpm add @trustlayer/sdk
 ```typescript
 import TrustLayer from "@trustlayer/sdk"
 
-// Initialize with your API key
 const tl = TrustLayer.initialize({
   apiKey: "tl_public_your_key_here",
+  apiUrl: "http://127.0.0.1:8080",
 })
 
-// Create a trust session
-const session = await tl.createSession({
-  type: "user_verification",
+const result = await tl.verifyHuman({
+  type: "interview",
+  consent: true,
 })
 
-// Start collecting signals
-session.startSignalCollection()
-
-// Evaluate trust
-const result = await session.evaluate()
-console.log(`Trust: ${result.trust_score.trust_score}`)
-console.log(`Risk:  ${result.risk_score.risk_score}`)
-console.log(`Recommendation: ${result.recommendation}`)
-
-// Complete the session
-await session.complete()
+console.log(result.human_probability)
+console.log(result.recommendation) // "allow" | "verify" | "review" | "block"
 ```
+
+React:
+
+```tsx
+import { useVerifyHuman } from "@trustlayer/sdk/react"
+
+const { verify, status, result } = useVerifyHuman({ apiKey, apiUrl })
+await verify({ consent: true })
+```
+
+Protect a route (Express):
+
+```ts
+import { requireHuman } from "@trustlayer/sdk/middleware"
+
+app.post("/payout", requireHuman({ apiKey: process.env.TRUSTLAYER_SECRET_KEY!, apiUrl }), (req, res) => {
+  res.json({ ok: true, recommendation: req.trustlayer?.recommendation })
+})
+```
+
+The client must send `X-TrustLayer-Session: sess_...` from a recent `verifyHuman()` / `createSession()` call.
 
 ---
 
@@ -255,10 +267,12 @@ import { verifyWebhookSignature } from "@trustlayer/sdk"
 // In your webhook handler (Express example):
 app.post("/webhook/trustlayer", async (req, res) => {
   const signature = req.headers["x-trustlayer-signature"]
+  const timestamp = req.headers["x-trustlayer-timestamp"]
   const isValid = await verifyWebhookSignature(
     req.rawBody,
-    signature,
-    process.env.WEBHOOK_SECRET
+    String(signature ?? ""),
+    process.env.WEBHOOK_SECRET!,
+    String(timestamp ?? "")
   )
 
   if (!isValid) {

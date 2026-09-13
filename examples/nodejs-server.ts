@@ -76,10 +76,15 @@ async function evaluateUserLogin(userId: string, metadata: Record<string, unknow
 async function handleIncomingWebhook(
   rawBody: string,
   signatureHeader: string,
-  webhookSecret: string
+  webhookSecret: string,
+  timestamp: string
 ): Promise<void> {
-  // Verify the webhook signature before processing
-  const isValid = await verifyWebhookSignature(rawBody, signatureHeader, webhookSecret);
+  const isValid = await verifyWebhookSignature(
+    rawBody,
+    signatureHeader,
+    webhookSecret,
+    timestamp
+  );
 
   if (!isValid) {
     console.error("✗ Webhook signature verification failed — rejecting");
@@ -151,7 +156,7 @@ async function main() {
   const sig = await signRequest(timestamp + "." + payload, webhookSecret);
   const header = `sha256=${sig}`;
 
-  await handleIncomingWebhook(payload, header, webhookSecret);
+  await handleIncomingWebhook(payload, header, webhookSecret, timestamp);
 }
 
 main().catch(console.error);

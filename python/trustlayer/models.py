@@ -21,6 +21,7 @@ SessionType = Literal[
 TrustModule = Literal[
     "fraud",
     "bot_detection",
+    "bot",
     "interview",
     "deepfake",
     "anomaly",
@@ -151,5 +152,7 @@ class WebhookEndpoint(BaseModel):
     organization_id: str
     url: str
     events: list[str] = Field(default_factory=list)
+    secret: Optional[str] = None
     active: bool
     created_at: str
+    warning: Optional[str] = None

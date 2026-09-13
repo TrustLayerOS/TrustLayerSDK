@@ -32,9 +32,10 @@ if FLASK_AVAILABLE:
     def trustlayer_webhook():
         # 1. Verify the signature before processing
         signature = request.headers.get("X-TrustLayer-Signature", "")
+        timestamp = request.headers.get("X-TrustLayer-Timestamp", "")
         raw_body = request.get_data()
 
-        if not verify_webhook_signature(raw_body, signature, WEBHOOK_SECRET):
+        if not verify_webhook_signature(raw_body, signature, WEBHOOK_SECRET, timestamp):
             print("✗ Invalid webhook signature — rejecting")
             abort(401)
 
@@ -80,24 +81,25 @@ def demo_signature_verification() -> None:
     import hashlib
     import hmac
 
+    import time
+
     secret = "my-webhook-secret"
     payload = json.dumps({
         "type": "risk.detected",
         "data": {"risk_score": 87, "session_id": "sess_abc"},
     })
     payload_bytes = payload.encode()
+    timestamp = str(int(time.time()))
 
-    # Simulate TrustLayerOS signing the payload
-    sig = hmac.new(secret.encode(), payload_bytes, hashlib.sha256).hexdigest()
+    signed = f"{timestamp}.".encode() + payload_bytes
+    sig = hmac.new(secret.encode(), signed, hashlib.sha256).hexdigest()
     header = f"sha256={sig}"
 
-    # Verify
-    is_valid = verify_webhook_signature(payload_bytes, header, secret)
+    is_valid = verify_webhook_signature(payload_bytes, header, secret, timestamp)
     print(f"Signature valid: {is_valid}")  # True
 
-    # Tampered payload
     tampered = payload.replace("87", "10")
-    is_valid_tampered = verify_webhook_signature(tampered, header, secret)
+    is_valid_tampered = verify_webhook_signature(tampered, header, secret, timestamp)
     print(f"Tampered valid:  {is_valid_tampered}")  # False
 
 

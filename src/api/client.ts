@@ -9,6 +9,9 @@ import {
   EvaluationResponse,
   ApiError,
   TrustLayerError,
+  GenerateKeysResponse,
+  IssueTokenResponse,
+  WebhookEndpoint,
 } from "./types";
 import { Logger } from "../utils/logger";
 import { retry } from "../utils/retry";
@@ -65,6 +68,44 @@ export class ApiClient {
       session_id: sessionId,
       modules,
     });
+  }
+
+  // ─── Auth / keys (secret key or JWT) ───────────────────────────────────────
+
+  async generateKeys(name: string, projectId?: string): Promise<GenerateKeysResponse> {
+    return this.request<GenerateKeysResponse>("POST", "/v1/auth/keys", {
+      name,
+      project_id: projectId,
+    });
+  }
+
+  async issueToken(
+    userId: string,
+    role = "developer",
+    ttlMinutes = 60
+  ): Promise<IssueTokenResponse> {
+    return this.request<IssueTokenResponse>("POST", "/v1/auth/token", {
+      user_id: userId,
+      role,
+      ttl_minutes: ttlMinutes,
+    });
+  }
+
+  // ─── Webhooks ──────────────────────────────────────────────────────────────
+
+  async registerWebhook(url: string, events?: string[]): Promise<WebhookEndpoint> {
+    return this.request<WebhookEndpoint>("POST", "/v1/webhooks", {
+      url,
+      events: events ?? [],
+    });
+  }
+
+  async listWebhooks(): Promise<{ webhooks: WebhookEndpoint[]; count: number }> {
+    return this.request("GET", "/v1/webhooks");
+  }
+
+  async deleteWebhook(webhookId: string): Promise<{ deleted: boolean; id: string }> {
+    return this.request("DELETE", `/v1/webhooks/${webhookId}`);
   }
 
   // ─── Core HTTP ─────────────────────────────────────────────────────────────

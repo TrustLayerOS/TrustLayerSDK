@@ -1,6 +1,7 @@
 export type TrustModule =
   | "fraud"
   | "bot_detection"
+  | "bot"
   | "interview"
   | "deepfake"
   | "anomaly";

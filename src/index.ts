@@ -59,11 +59,27 @@ export type {
   CreateSessionRequest,
   CreateSessionResponse,
   EvaluationModules,
+  GenerateKeysResponse,
+  IssueTokenResponse,
+  WebhookEndpoint,
 } from "./api/types";
 export { TrustLayerError } from "./api/types";
 
 // ─── Crypto ───────────────────────────────────────────────────────────────────
-export { signRequest, verifyWebhookSignature } from "./crypto/signing";
+export {
+  signRequest,
+  verifyWebhookSignature,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "./crypto/signing";
+
+// ─── Server middleware (Express / Next) ───────────────────────────────────────
+export {
+  requireHuman,
+  nextRequireHuman,
+  assertRecentAllow,
+  SESSION_HEADER,
+} from "./middleware";
 
 // ─── Default export ───────────────────────────────────────────────────────────
 export { TrustLayer as default } from "./client";

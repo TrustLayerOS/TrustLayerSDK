@@ -32,29 +32,39 @@ export async function signRequest(
   return bufferToHex(signatureBuffer);
 }
 
+export const WEBHOOK_SIGNATURE_HEADER = "X-TrustLayer-Signature";
+export const WEBHOOK_TIMESTAMP_HEADER = "X-TrustLayer-Timestamp";
+export const DEFAULT_WEBHOOK_MAX_AGE_SECONDS = 300;
+
 /**
  * Verifies a webhook signature sent by TrustLayerOS.
- * The signature header value is: sha256=<hex>
+ *
+ * OS signs HMAC-SHA256(secret, timestamp + "." + rawBody) and sends:
+ *   X-TrustLayer-Signature: sha256=<hex>
+ *   X-TrustLayer-Timestamp: <unix seconds>
  */
 export async function verifyWebhookSignature(
   payload: string,
   signature: string,
-  secret: string
+  secret: string,
+  timestamp: string,
+  maxAgeSeconds = DEFAULT_WEBHOOK_MAX_AGE_SECONDS
 ): Promise<boolean> {
+  if (!timestamp) return false;
+  const ts = Number(timestamp);
+  if (!Number.isFinite(ts)) return false;
+  if (
+    maxAgeSeconds > 0 &&
+    Math.abs(Date.now() / 1000 - ts) > maxAgeSeconds
+  ) {
+    return false;
+  }
+
   const hexSig = signature.startsWith("sha256=")
     ? signature.slice(7)
     : signature;
 
-  const encoder = new TextEncoder();
-  const key = await getKey(secret);
-  const expectedBuffer = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    encoder.encode(payload)
-  );
-  const expected = bufferToHex(expectedBuffer);
-
-  // Constant-time comparison
+  const expected = await signRequest(`${timestamp}.${payload}`, secret);
   return timingSafeEqual(expected, hexSig);
 }
 

@@ -16,6 +16,7 @@ jobs:
       - run: npm ci || npm install
       - run: npm test
       - run: npm run build
+      - run: test -f dist/trustlayer.iife.global.js
 
   python:
     runs-on: ubuntu-latest

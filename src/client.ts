@@ -1,12 +1,23 @@
-import { TrustLayerConfig, DEFAULT_API_URL, DEFAULT_TIMEOUT } from "./config";
+import { TrustLayerConfig, TrustModule, DEFAULT_API_URL, DEFAULT_TIMEOUT } from "./config";
 import { ApiClient } from "./api/client";
-import { SessionManager, TrustSession, CreateSessionOptions } from "./session";
+import {
+  SessionManager,
+  TrustSession,
+  CreateSessionOptions,
+  VerifyHumanOptions,
+} from "./session";
 import { FraudShield } from "./modules/fraud";
 import { BotShield } from "./modules/bot";
 import { InterviewShield } from "./modules/interview";
 import { DeepfakeShield } from "./modules/deepfake";
 import { AnomalyShield } from "./modules/anomaly";
 import { Logger } from "./utils/logger";
+import {
+  EvaluationResponse,
+  GenerateKeysResponse,
+  IssueTokenResponse,
+  WebhookEndpoint,
+} from "./api/types";
 
 /**
  * TrustLayer — the main SDK client.
@@ -67,6 +78,47 @@ export class TrustLayer {
    */
   async getSession(sessionId: string): Promise<TrustSession> {
     return this.sessionManager.get(sessionId);
+  }
+
+  /**
+   * One-shot: create a session, run liveness / media (browser), evaluate.
+   * Same JSON as POST /v1/evaluate (`human_probability`, `recommendation`).
+   */
+  async verifyHuman(
+    options: VerifyHumanOptions & Partial<CreateSessionOptions> = {}
+  ): Promise<EvaluationResponse> {
+    const session = await this.createSession({
+      type: options.type ?? "interview",
+      userId: options.userId,
+      modules: options.modules ?? (["interview", "deepfake", "bot"] as TrustModule[]),
+      riskThreshold: options.riskThreshold,
+      metadata: options.metadata,
+    });
+    session.startSignalCollection();
+    return session.verifyHuman(options);
+  }
+
+  generateKeys(name: string, projectId?: string): Promise<GenerateKeysResponse> {
+    return this.apiClient.generateKeys(name, projectId);
+  }
+
+  issueToken(
+    userId: string,
+    opts?: { role?: string; ttlMinutes?: number }
+  ): Promise<IssueTokenResponse> {
+    return this.apiClient.issueToken(userId, opts?.role, opts?.ttlMinutes);
+  }
+
+  registerWebhook(url: string, events?: string[]): Promise<WebhookEndpoint> {
+    return this.apiClient.registerWebhook(url, events);
+  }
+
+  listWebhooks(): Promise<{ webhooks: WebhookEndpoint[]; count: number }> {
+    return this.apiClient.listWebhooks();
+  }
+
+  deleteWebhook(webhookId: string): Promise<{ deleted: boolean; id: string }> {
+    return this.apiClient.deleteWebhook(webhookId);
   }
 
   // ─── Module Access ─────────────────────────────────────────────────────────

@@ -41,7 +41,6 @@ export async function createMediaSampler(): Promise<MediaSampler> {
   let stream: MediaStream | null = null;
   let video: HTMLVideoElement | null = null;
   let canvas: HTMLCanvasElement | null = null;
-  let prevGray: Float32Array | null = null;
 
   return {
     async start(opts = { audio: true, video: true }) {
@@ -113,7 +112,6 @@ export async function createMediaSampler(): Promise<MediaSampler> {
         video = null;
       }
       canvas = null;
-      prevGray = null;
     },
   };
 }

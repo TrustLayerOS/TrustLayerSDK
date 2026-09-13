@@ -119,6 +119,34 @@ export interface ApiError {
   code?: number;
 }
 
+export interface GenerateKeysResponse {
+  public_key: string;
+  secret_key: string;
+  project_id: string;
+  name: string;
+  warning: string;
+  created_at: string;
+}
+
+export interface IssueTokenResponse {
+  token: string;
+  token_type: string;
+  expires_in: number;
+  user_id: string;
+  org_id: string;
+}
+
+export interface WebhookEndpoint {
+  id: string;
+  organization_id: string;
+  url: string;
+  events: string[];
+  secret?: string;
+  active: boolean;
+  created_at: string;
+  warning?: string;
+}
+
 export class TrustLayerError extends Error {
   public readonly statusCode: number;
   public readonly errorCode: string;

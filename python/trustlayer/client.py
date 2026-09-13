@@ -44,8 +44,12 @@ class TrustLayer:
         result = session.evaluate()
         print(result.recommendation)  # "allow"
 
-        # Or use the convenience evaluate() shorthand
-        result = client.evaluate(session.session_id)
+        result = client.verify_human(
+            type="interview",
+            consent=True,
+            liveness_passed=True,
+            image_b64=jpeg_b64,
+        )
 
     Use as a context manager to ensure the HTTP client is closed::
 
@@ -122,6 +126,48 @@ class TrustLayer:
             response_model=CreateSessionResponse,
         )
         return TrustSession(data, self._http)
+
+    def verify_human(
+        self,
+        type: str = "interview",  # noqa: A002
+        *,
+        user_id: Optional[str] = None,
+        consent: bool = False,
+        liveness_passed: Optional[bool] = None,
+        video_features: Optional[list[float]] = None,
+        audio_features: Optional[list[float]] = None,
+        image_b64: Optional[str] = None,
+        audio_b64: Optional[str] = None,
+        audio_pcm: Optional[list[float]] = None,
+        sample_rate: int = 16000,
+        challenge: str = "external",
+        motion: Optional[dict[str, Any]] = None,
+        modules: Optional[list[str]] = None,
+    ) -> EvaluationResponse:
+        """
+        One-shot: create a session, send optional biometric events, evaluate.
+
+        Same contract as JS ``TrustLayer.verifyHuman()``. Python cannot open a
+        webcam — pass captured JPEG / PCM / features.
+        """
+        session = self.create_session(
+            type=type,
+            user_id=user_id,
+            modules=modules or ["interview", "deepfake", "bot"],
+        )
+        return session.verify_human(
+            consent=consent,
+            liveness_passed=liveness_passed,
+            video_features=video_features,
+            audio_features=audio_features,
+            image_b64=image_b64,
+            audio_b64=audio_b64,
+            audio_pcm=audio_pcm,
+            sample_rate=sample_rate,
+            challenge=challenge,
+            motion=motion,
+            modules=modules,
+        )
 
     # ── Shorthand score methods ────────────────────────────────────────────────
 

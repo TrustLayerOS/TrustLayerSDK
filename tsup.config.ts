@@ -1,26 +1,40 @@
 import { defineConfig } from "tsup";
 
-// NOTE: Node.js 18+ is required for server-side usage.
-// The browser signal collectors (device.ts, behavior.ts) use window/document
-// globals which are guarded at runtime. crypto.subtle is available natively
-// in Node 18+ — no polyfill needed.
-
-export default defineConfig({
-  entry: ["src/index.ts"],
-  format: ["cjs", "esm"],
-  dts: true,
-  sourcemap: true,
-  clean: true,
-  splitting: false,
-  treeshake: true,
-  minify: false,
-  target: "es2020",
-  // Use "browser" for the ESM bundle and "node" for CJS so that
-  // tree-shaking removes DOM globals in Node builds.
-  platform: "neutral",
-  outDir: "dist",
-  define: {
-    // Allow consumers to detect the SDK version at runtime
-    "process.env.TRUSTLAYER_SDK_VERSION": JSON.stringify("0.1.0"),
+export default defineConfig([
+  {
+    entry: {
+      index: "src/index.ts",
+      react: "src/react/index.ts",
+      middleware: "src/middleware/index.ts",
+    },
+    format: ["cjs", "esm"],
+    dts: true,
+    sourcemap: true,
+    clean: true,
+    splitting: false,
+    treeshake: true,
+    minify: false,
+    target: "es2020",
+    platform: "neutral",
+    outDir: "dist",
+    external: ["react"],
+    define: {
+      "process.env.TRUSTLAYER_SDK_VERSION": JSON.stringify("0.1.0"),
+    },
   },
-});
+  {
+    entry: { "trustlayer.iife": "src/index.ts" },
+    format: ["iife"],
+    globalName: "TrustLayerSDK",
+    dts: false,
+    sourcemap: true,
+    clean: false,
+    minify: true,
+    target: "es2020",
+    platform: "browser",
+    outDir: "dist",
+    define: {
+      "process.env.TRUSTLAYER_SDK_VERSION": JSON.stringify("0.1.0"),
+    },
+  },
+]);
