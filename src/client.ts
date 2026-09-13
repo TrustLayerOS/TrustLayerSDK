@@ -6,6 +6,12 @@ import {
   CreateSessionOptions,
   VerifyHumanOptions,
 } from "./session";
+import {
+  modulesForThreats,
+  needsMedia,
+  sessionTypeForThreats,
+  type Threat,
+} from "./check";
 import { FraudShield } from "./modules/fraud";
 import { BotShield } from "./modules/bot";
 import { InterviewShield } from "./modules/interview";
@@ -102,6 +108,49 @@ export class TrustLayer {
    * Voice-only check (cloned speech / replay). Works on a mic or any audio track
    * from Zoom, Meet-sidecar, Twilio, etc.
    */
+  /**
+   * One function for every threat you care about.
+   * Picks session type + modules, optionally samples media / text, then evaluate.
+   */
+  async check(
+    options: VerifyHumanOptions &
+      Partial<CreateSessionOptions> & {
+        threats?: Threat[];
+        text?: string;
+        agentId?: string;
+        ownerOrg?: string;
+      } = {}
+  ): Promise<EvaluationResponse> {
+    const threats = options.threats ?? ["human"];
+    const modules = options.modules ?? modulesForThreats(threats);
+    const session = await this.createSession({
+      type: options.type ?? sessionTypeForThreats(threats),
+      userId: options.userId,
+      modules,
+      riskThreshold: options.riskThreshold,
+      metadata: options.metadata,
+    });
+
+    if (options.text) {
+      await session.trackEvent("custom", {
+        signal_type: "message",
+        message_content: options.text,
+      });
+    }
+    if (options.agentId) {
+      await session.trackEvent("custom", {
+        agent_id: options.agentId,
+        owner_org: options.ownerOrg,
+      });
+    }
+
+    if (needsMedia(threats) || options.source) {
+      session.startSignalCollection();
+      return session.verifyHuman({ ...options, modules });
+    }
+    return session.evaluate(modules);
+  }
+
   async verifyVoice(
     options: Omit<VerifyHumanOptions, "video" | "liveness"> & Partial<CreateSessionOptions> = {}
   ): Promise<EvaluationResponse> {

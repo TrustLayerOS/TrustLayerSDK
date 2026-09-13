@@ -45,6 +45,8 @@ export interface VerifyHumanOptions {
    * call getUserMedia and liveness defaults to off (remote tiles cannot look left).
    */
   source?: MediaSource;
+  /** Override evaluate modules. Default interview + deepfake + bot. */
+  modules?: string[];
 }
 
 /**
@@ -282,7 +284,7 @@ export class TrustSession {
       });
     }
 
-    return this.evaluate(["interview", "deepfake", "bot"]);
+    return this.evaluate(options.modules ?? ["interview", "deepfake", "bot"]);
   }
 
   async complete(): Promise<EvaluationResponse> {

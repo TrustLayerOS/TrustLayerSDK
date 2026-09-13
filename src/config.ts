@@ -4,7 +4,9 @@ export type TrustModule =
   | "bot"
   | "interview"
   | "deepfake"
-  | "anomaly";
+  | "anomaly"
+  | "spam"
+  | "agent";
 
 export type SessionType =
   | "user_verification"

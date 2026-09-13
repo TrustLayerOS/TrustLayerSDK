@@ -73,6 +73,23 @@ if (result.recommendation === "allow") {
 
 `verifyHuman()` creates a session, runs a liveness challenge in the browser, sends features (not a raw video dump), and returns `POST /v1/evaluate`.
 
+### One call per threat
+
+```ts
+await tl.check({ threats: ["human"], consent: true })          // live person
+await tl.check({ threats: ["voice"], source: audio, consent: true })
+await tl.check({ threats: ["video"], source: tile, consent: true })
+await tl.check({ threats: ["bot"] })
+await tl.check({ threats: ["spam"], text: messageBody })
+await tl.check({ threats: ["agent"], agentId: "agt_1", ownerOrg: "acme" })
+await tl.check({ threats: ["fraud"] })
+await tl.check({ threats: ["ai"], text: outboundCopy })        // assisted / templated
+```
+
+Same JSON: `recommendation` + `modules.deepfake | bot | spam | agent | fraud | anomaly`.
+
+Shields other than interview / deepfake / bot are **heuristic**. Act on `recommendation`; do not claim a trained spam or agent model.
+
 ### Meet, Zoom, and any WebRTC app
 
 Google Meet and Zoom do not let a third-party script read their tiles. Pass the `MediaStream` you already have from a Video SDK, LiveKit, Daily, Twilio, or your own room.

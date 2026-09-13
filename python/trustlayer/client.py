@@ -169,6 +169,50 @@ class TrustLayer:
             modules=modules,
         )
 
+    def check(
+        self,
+        *,
+        threats: Optional[list[str]] = None,
+        type: Optional[str] = None,  # noqa: A002
+        user_id: Optional[str] = None,
+        consent: bool = False,
+        text: Optional[str] = None,
+        agent_id: Optional[str] = None,
+        owner_org: Optional[str] = None,
+        image_b64: Optional[str] = None,
+        audio_b64: Optional[str] = None,
+        audio_pcm: Optional[list[float]] = None,
+        modules: Optional[list[str]] = None,
+    ) -> EvaluationResponse:
+        """
+        One call for voice / video / bot / spam / agent / fraud.
+
+        ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``,
+        ``["agent"]``, ``["fraud"]``, ``["ai"]``.
+        """
+        wanted = threats or ["human"]
+        mods = modules or _modules_for_threats(wanted)
+        session_type = type or _session_type_for_threats(wanted)
+        session = self.create_session(
+            type=session_type,
+            user_id=user_id,
+            modules=mods,
+        )
+        if text:
+            session.track_event("custom", {"signal_type": "message", "message_content": text})
+        if agent_id:
+            session.track_event("custom", {"agent_id": agent_id, "owner_org": owner_org})
+        needs_media = any(t in wanted for t in ("human", "voice", "video", "deepfake"))
+        if needs_media or image_b64 or audio_b64 or audio_pcm:
+            return session.verify_human(
+                consent=consent,
+                image_b64=image_b64,
+                audio_b64=audio_b64,
+                audio_pcm=audio_pcm,
+                modules=mods,
+            )
+        return session.evaluate(mods)
+
     def verify_voice(
         self,
         type: str = "interview",  # noqa: A002
@@ -335,3 +379,43 @@ class TrustLayer:
 
     def __repr__(self) -> str:
         return f"TrustLayer(api_url={self._http._base_url!r})"
+
+
+def _modules_for_threats(threats: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+
+    def add(*names: str) -> None:
+        for n in names:
+            if n not in seen:
+                seen.add(n)
+                out.append(n)
+
+    for t in threats or ["human"]:
+        if t == "human":
+            add("interview", "deepfake", "bot")
+        elif t in ("voice", "video", "deepfake"):
+            add("deepfake", "bot")
+        elif t == "bot":
+            add("bot")
+        elif t == "spam":
+            add("spam")
+        elif t == "agent":
+            add("agent", "bot")
+        elif t == "fraud":
+            add("fraud", "anomaly")
+        elif t == "anomaly":
+            add("anomaly")
+        elif t == "ai":
+            add("interview", "spam", "bot")
+    return out or ["interview", "deepfake", "bot"]
+
+
+def _session_type_for_threats(threats: list[str]) -> str:
+    if "agent" in threats:
+        return "agent"
+    if "fraud" in threats:
+        return "transaction"
+    if "spam" in threats and not any(t in threats for t in ("human", "deepfake", "voice", "video")):
+        return "user_verification"
+    return "interview"

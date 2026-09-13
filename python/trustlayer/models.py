@@ -25,6 +25,8 @@ TrustModule = Literal[
     "interview",
     "deepfake",
     "anomaly",
+    "spam",
+    "agent",
 ]
 
 
@@ -108,6 +110,10 @@ class EvaluationModules(BaseModel):
     interview: Optional[dict[str, Any]] = None
     deepfake: Optional[dict[str, Any]] = None
     bot: Optional[dict[str, Any]] = None
+    fraud: Optional[dict[str, Any]] = None
+    anomaly: Optional[dict[str, Any]] = None
+    spam: Optional[dict[str, Any]] = None
+    agent: Optional[dict[str, Any]] = None
 
 
 class EvaluationResponse(BaseModel):

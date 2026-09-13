@@ -93,6 +93,32 @@ export interface EvaluationModules {
     confidence: number;
     signals: string[];
   };
+  fraud?: {
+    fraud_probability: number;
+    risk_score: number;
+    factors: string[];
+  };
+  anomaly?: {
+    anomaly_score: number;
+    is_anomaly: boolean;
+    deviations: string[];
+  };
+  spam?: {
+    spam_probability: number;
+    spam_score: number;
+    is_spam: boolean;
+    signals: string[];
+    action: string;
+  };
+  agent?: {
+    trust_score: number;
+    is_authorized: boolean;
+    owner_verified: boolean;
+    behavior_risk: number;
+    permission_violations: string[];
+    recommendation: string;
+    signals: string[];
+  };
 }
 
 export interface EvaluationResponse {

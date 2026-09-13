@@ -4,6 +4,8 @@ export { TrustLayer } from "./client";
 // ─── Session ──────────────────────────────────────────────────────────────────
 export { TrustSession, SessionManager } from "./session";
 export type { CreateSessionOptions, VerifyHumanOptions } from "./session";
+export { modulesForThreats, sessionTypeForThreats } from "./check";
+export type { Threat } from "./check";
 export { assertMediaConsent } from "./privacy";
 
 // ─── Config ───────────────────────────────────────────────────────────────────

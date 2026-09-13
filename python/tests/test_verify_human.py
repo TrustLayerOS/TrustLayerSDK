@@ -1,3 +1,4 @@
+from trustlayer.client import _modules_for_threats, _session_type_for_threats
 from trustlayer.exceptions import TrustLayerError
 from trustlayer.models import CreateSessionResponse
 from trustlayer.session import TrustSession
@@ -22,6 +23,13 @@ def test_verify_human_requires_consent_for_media():
         raise AssertionError("expected consent_required")
     except TrustLayerError as e:
         assert "consent_required" in str(e)
+
+
+def test_threat_presets():
+    assert _modules_for_threats(["human"]) == ["interview", "deepfake", "bot"]
+    assert _modules_for_threats(["spam"]) == ["spam"]
+    assert _modules_for_threats(["agent"]) == ["agent", "bot"]
+    assert _session_type_for_threats(["fraud"]) == "transaction"
 
 
 def test_verify_voice_requires_consent():
