@@ -114,34 +114,57 @@ class TrustSession:
     def verify_human(
         self,
         *,
+        consent: bool = False,
         liveness_passed: Optional[bool] = None,
         video_features: Optional[list[float]] = None,
         audio_features: Optional[list[float]] = None,
+        image_b64: Optional[str] = None,
+        audio_b64: Optional[str] = None,
+        audio_pcm: Optional[list[float]] = None,
+        sample_rate: int = 16000,
         challenge: str = "external",
+        motion: Optional[dict[str, Any]] = None,
         modules: Optional[list[str]] = None,
     ) -> EvaluationResponse:
         """
-        Server-side human check. The Python SDK cannot open a webcam; pass
-        features captured by your app (or the JS SDK) then evaluate.
+        Same contract as JS ``session.verifyHuman()``. Python cannot open a
+        webcam — pass captured JPEG / PCM / features, then evaluate.
 
-        :param liveness_passed: Result of your liveness challenge.
-        :param video_features: Forensic frame vector (see extract_frame_features).
-        :param audio_features: Spectral voice vector.
+        Biometric fields require ``consent=True``. Raw frames are scored by
+        the OS and not persisted.
         """
+        needs_bio = any(
+            x is not None
+            for x in (liveness_passed, video_features, audio_features, image_b64, audio_b64, audio_pcm)
+        )
+        if needs_bio and not consent:
+            from .exceptions import TrustLayerError
+
+            raise TrustLayerError("consent_required")
+
+        payload = {"consent": True, "challenge": challenge}
+        if motion:
+            payload["motion"] = motion
         if liveness_passed is True:
-            self.track_event(
-                "liveness_challenge_passed",
-                {"challenge": challenge, "passed_client": True},
-            )
+            self.track_event("liveness_challenge_passed", {**payload, "passed_client": True})
         elif liveness_passed is False:
+            self.track_event("liveness_challenge_failed", {**payload, "passed_client": False})
+        if video_features or image_b64:
             self.track_event(
-                "liveness_challenge_failed",
-                {"challenge": challenge, "passed_client": False},
+                "face_frame",
+                {**payload, "ml_features": video_features or [], "image_b64": image_b64},
             )
-        if video_features:
-            self.track_event("face_frame", {"ml_features": video_features})
-        if audio_features:
-            self.track_event("voice_liveness", {"ml_features": audio_features})
+        if audio_features or audio_b64 or audio_pcm:
+            self.track_event(
+                "voice_liveness",
+                {
+                    **payload,
+                    "ml_features": audio_features or [],
+                    "audio_b64": audio_b64,
+                    "audio_pcm": audio_pcm,
+                    "sample_rate": sample_rate,
+                },
+            )
         return self.evaluate(modules or ["interview", "deepfake", "bot"])
 
     def complete(self) -> EvaluationResponse:

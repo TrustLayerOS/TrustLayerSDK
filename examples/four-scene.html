@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>TrustLayer — four-scene demo</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #0b0c10; color: #e8e9ef; padding: 40px 20px; }
+    a { color: #6d7cff; }
+    .card { max-width: 640px; margin: 0 auto; background: #14151b; border: 1px solid #262833; border-radius: 16px; padding: 28px; }
+    ol { line-height: 1.6; color: #a9adc0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Four-scene demo</h1>
+    <p>Live pass, screen replay, window-switch review, empty-bot. Runs from the ML demo so ONNX + <code>/v1/evaluate</code> stay in one place.</p>
+    <p><a href="http://127.0.0.1:8001/demo">Open http://127.0.0.1:8001/demo</a></p>
+    <ol>
+      <li>Check consent, start camera, <strong>1 · Live pass</strong></li>
+      <li>Hold a phone to the webcam, <strong>2 · Screen replay</strong></li>
+      <li><strong>3 · Window-switch</strong> (no camera)</li>
+      <li><strong>4 · Empty bot</strong> (no camera)</li>
+    </ol>
+    <p>Script: <code>TrustLayerDocs/10-Roadmap/demo-script.md</code>. Compose: <code>docker compose up --build</code> in TrustLayerOS so evaluate hits the API. Without the API the page falls back to <code>POST /ml/evaluate</code>.</p>
+  </div>
+</body>
+</html>

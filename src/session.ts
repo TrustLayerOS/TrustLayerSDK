@@ -20,6 +20,7 @@ import {
   type FrameSample,
 } from "./signals/media";
 import { runLivenessChallenge, type LivenessPrompt } from "./modules/liveness";
+import { assertMediaConsent } from "./privacy";
 
 export interface CreateSessionOptions {
   type: SessionType;
@@ -33,6 +34,9 @@ export interface VerifyHumanOptions {
   liveness?: boolean;
   video?: boolean;
   audio?: boolean;
+  /** Must be true (or confirmed via onConsent) before camera/mic. */
+  consent?: boolean;
+  onConsent?: () => boolean | Promise<boolean>;
   onPrompt?: (prompt: LivenessPrompt) => void;
 }
 
@@ -191,6 +195,19 @@ export class TrustSession {
     const video = options.video !== false;
     const audio = options.audio !== false;
 
+    let consented = options.consent === true;
+    if (!consented && options.onConsent) {
+      consented = !!(await options.onConsent());
+    }
+    if (!consented && isBrowser() && (liveness || video || audio)) {
+      consented = window.confirm(
+        "TrustLayer will use your camera and microphone to check you are a live human. Features are scored; raw video is not stored."
+      );
+    }
+    if (liveness || video || audio) {
+      assertMediaConsent(consented);
+    }
+
     if (liveness) {
       await runLivenessChallenge(this, { onPrompt: options.onPrompt });
     }
@@ -210,6 +227,7 @@ export class TrustSession {
                 ml_features: features,
                 image_b64: sampler.sampleJpeg() ?? undefined,
                 sample_index: i,
+                consent: true,
               });
               prev = frame;
             }
@@ -219,7 +237,7 @@ export class TrustSession {
         if (audio) {
           const feats = await sampler.sampleAudio(700);
           if (feats) {
-            await this.trackEvent("voice_liveness", { ml_features: feats });
+            await this.trackEvent("voice_liveness", { ml_features: feats, consent: true });
           }
         }
       } catch (err) {

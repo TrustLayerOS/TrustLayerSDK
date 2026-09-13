@@ -1,0 +1,24 @@
+from trustlayer.exceptions import TrustLayerError
+from trustlayer.models import CreateSessionResponse
+from trustlayer.session import TrustSession
+
+
+def _session() -> TrustSession:
+    data = CreateSessionResponse(
+        id="sess_test",
+        organization_id="org_dev",
+        type="interview",
+        status="active",
+        expires_at="2099-01-01T00:00:00Z",
+        created_at="2026-01-01T00:00:00Z",
+    )
+    return TrustSession(data, http=None)  # type: ignore[arg-type]
+
+
+def test_verify_human_requires_consent_for_media():
+    s = _session()
+    try:
+        s.verify_human(liveness_passed=True, consent=False)
+        raise AssertionError("expected consent_required")
+    except TrustLayerError as e:
+        assert "consent_required" in str(e)

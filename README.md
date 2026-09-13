@@ -1,13 +1,14 @@
 # @trustlayer/sdk
 
-The official JavaScript/TypeScript SDK for [TrustLayer](https://trustlayer.dev) — trust infrastructure for the AI-native internet.
+The official JavaScript/TypeScript SDK for TrustLayer.
 
-TrustLayer lets your application understand every digital interaction:
-- Is this user real or synthetic?
-- Is this an AI agent or a human?
-- Is AI assisting this interview candidate?
-- Is this transaction fraudulent?
-- Is this a bot?
+> TrustLayer is the API apps call to know if the other side is a real human — not a deepfake, bot, or synthetic identity — without forcing users to give up privacy.
+
+**Built:** `createSession` → events → `evaluate()` / `verifyHuman()` → `human_probability` + `recommendation`.
+
+**Partial:** browser camera liveness + frame/audio features (requires TrustLayerOS ML). Fraud / bot / anomaly helpers send events; they are not trained models.
+
+**Planned:** React hook, route middleware, published npm `0.1` polish.
 
 ---
 
