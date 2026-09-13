@@ -169,6 +169,33 @@ class TrustLayer:
             modules=modules,
         )
 
+    def verify_voice(
+        self,
+        type: str = "interview",  # noqa: A002
+        *,
+        user_id: Optional[str] = None,
+        consent: bool = False,
+        audio_features: Optional[list[float]] = None,
+        audio_b64: Optional[str] = None,
+        audio_pcm: Optional[list[float]] = None,
+        sample_rate: int = 16000,
+        modules: Optional[list[str]] = None,
+    ) -> EvaluationResponse:
+        """One-shot voice clone / replay check."""
+        session = self.create_session(
+            type=type,
+            user_id=user_id,
+            modules=modules or ["deepfake", "bot"],
+        )
+        return session.verify_voice(
+            consent=consent,
+            audio_features=audio_features,
+            audio_b64=audio_b64,
+            audio_pcm=audio_pcm,
+            sample_rate=sample_rate,
+            modules=modules,
+        )
+
     # ── Shorthand score methods ────────────────────────────────────────────────
 
     def trust_score(self, session_id: str) -> TrustScoreResponse:

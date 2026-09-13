@@ -42,7 +42,12 @@ export {
   extractFrameFeatures,
   extractAudioFeatures,
   createMediaSampler,
+  createMediaSamplerFrom,
 } from "./signals/index";
+export type { MediaSource } from "./signals/index";
+
+export { attachToCall, enforceCallDecision, shouldRemoveParticipant } from "./integrations/meeting";
+export type { AttachCallOptions, CallWatchHandle, CallPlatform } from "./integrations/meeting";
 export type {
   DeviceSignals,
   BehaviorSignals,

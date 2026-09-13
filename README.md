@@ -73,6 +73,42 @@ if (result.recommendation === "allow") {
 
 `verifyHuman()` creates a session, runs a liveness challenge in the browser, sends features (not a raw video dump), and returns `POST /v1/evaluate`.
 
+### Meet, Zoom, and any WebRTC app
+
+Google Meet and Zoom do not let a third-party script read their tiles. Pass the `MediaStream` you already have from a Video SDK, LiveKit, Daily, Twilio, or your own room.
+
+```ts
+import TrustLayer, { attachToCall } from "@trustlayer/sdk"
+
+// One-shot on a Zoom / LiveKit / file stream
+await tl.verifyHuman({
+  source: participantStream,
+  consent: true,
+  liveness: false,
+})
+
+// Voice clone / replay only
+await tl.verifyVoice({ source: audioStream, consent: true })
+
+// Keep watching; on block, mute and blur the tile you control
+const session = await tl.createSession({ type: "interview" })
+await attachToCall({
+  session,
+  source: participantStream,
+  platform: "zoom",
+  participantId: "user_123",
+  consent: true,
+  autoRemove: true,
+  onDecision: (r) => {
+    if (r.recommendation === "block") {
+      // kick via your host API — the SDK can only mute a stream it was given
+    }
+  },
+})
+```
+
+Meet-lookalike demo (recording → deepfake tile removed → you join live): `examples/meeting-sidecar.html`. Shot list: `TrustLayerDocs/10-Roadmap/meet-zoom-demo.md`.
+
 ### React
 
 ```tsx

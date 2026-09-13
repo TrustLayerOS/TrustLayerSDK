@@ -22,3 +22,12 @@ def test_verify_human_requires_consent_for_media():
         raise AssertionError("expected consent_required")
     except TrustLayerError as e:
         assert "consent_required" in str(e)
+
+
+def test_verify_voice_requires_consent():
+    s = _session()
+    try:
+        s.verify_voice(consent=False, audio_pcm=[0.0, 0.1])
+        raise AssertionError("expected consent_required")
+    except TrustLayerError as e:
+        assert "consent_required" in str(e)

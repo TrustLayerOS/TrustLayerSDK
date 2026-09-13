@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TrustLayer — meeting sidecar</title>
+  <style>
+    :root { color-scheme: dark; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Google Sans", system-ui, sans-serif;
+      background: #202124;
+      color: #e8eaed;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 12px 20px; font-size: 14px; color: #9aa0a6;
+    }
+    header strong { color: #e8eaed; font-weight: 500; }
+    .stage {
+      flex: 1; display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+      padding: 8px 16px 100px;
+    }
+    .tile {
+      position: relative; background: #3c4043; border-radius: 12px; overflow: hidden;
+      min-height: 280px;
+    }
+    .tile video {
+      width: 100%; height: 100%; object-fit: cover; background: #000;
+      min-height: 280px;
+    }
+    .tile.removed video { filter: grayscale(1) blur(16px); }
+    .name {
+      position: absolute; left: 12px; bottom: 12px;
+      background: rgba(0,0,0,.55); padding: 4px 10px; border-radius: 6px; font-size: 13px;
+    }
+    .stamp {
+      position: absolute; top: 12px; right: 12px;
+      padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600;
+      background: #3c4043;
+    }
+    .stamp.block { background: #5f2120; color: #f8c4c2; }
+    .stamp.allow { background: #1e3a2f; color: #a8f0c6; }
+    .stamp.verify, .stamp.review { background: #3e3420; color: #f5d48a; }
+    .dock {
+      position: fixed; left: 0; right: 0; bottom: 0;
+      background: #202124; border-top: 1px solid #3c4043;
+      padding: 12px 16px 16px;
+      display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    }
+    button, label.btn, input[type="text"] {
+      background: #3c4043; color: #e8eaed; border: 0; border-radius: 24px;
+      padding: 8px 14px; font-size: 13px; cursor: pointer;
+    }
+    button.primary { background: #8ab4f8; color: #202124; font-weight: 600; }
+    button.danger { background: #f28b82; color: #202124; font-weight: 600; }
+    input[type="file"] { display: none; }
+    input[type="text"] { width: 220px; cursor: text; }
+    .hint { font-size: 12px; color: #9aa0a6; margin-left: 8px; }
+    pre {
+      margin: 0 16px 88px; background: #000; border-radius: 8px; padding: 12px;
+      font-size: 12px; overflow: auto; max-height: 160px; display: none;
+    }
+    pre.show { display: block; }
+    @media (max-width: 720px) { .stage { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header>
+    <span><strong>TrustLayer meeting</strong> · sidecar (not injected into meet.google.com)</span>
+    <span id="clock"></span>
+  </header>
+  <div class="stage">
+    <div class="tile" id="guestTile">
+      <video id="guest" playsinline muted loop></video>
+      <div class="name">Guest · recording / deepfake</div>
+      <div class="stamp" id="guestStamp">idle</div>
+    </div>
+    <div class="tile" id="liveTile">
+      <video id="live" playsinline muted></video>
+      <div class="name">You · live</div>
+      <div class="stamp" id="liveStamp">idle</div>
+    </div>
+  </div>
+  <pre id="out"></pre>
+  <div class="dock">
+    <label class="btn">Load Meet / deepfake clip
+      <input id="file" type="file" accept="video/*,audio/*" />
+    </label>
+    <button id="watchGuest" class="danger">Watch guest</button>
+    <button id="watchVoice">Watch guest (voice only)</button>
+    <button id="joinLive" class="primary">Join live</button>
+    <button id="stopAll">Stop</button>
+    <input id="apiUrl" type="text" value="http://127.0.0.1:8080" />
+    <input id="apiKey" type="text" value="tl_public_demodemo12DEADBEEF00000001" />
+    <span class="hint">Consent is required. Build the IIFE first: npm run build</span>
+  </div>
+
+  <script src="../dist/trustlayer.iife.global.js"></script>
+  <script>
+    const guest = document.getElementById("guest");
+    const live = document.getElementById("live");
+    const out = document.getElementById("out");
+    const guestStamp = document.getElementById("guestStamp");
+    const liveStamp = document.getElementById("liveStamp");
+    let watch = null;
+    let liveStream = null;
+
+    setInterval(() => {
+      document.getElementById("clock").textContent = new Date().toLocaleTimeString();
+    }, 1000);
+
+    function log(obj) {
+      out.classList.add("show");
+      out.textContent = typeof obj === "string" ? obj : JSON.stringify(obj, null, 2);
+    }
+
+    function stamp(el, rec) {
+      el.textContent = rec || "idle";
+      el.className = "stamp " + (rec || "");
+    }
+
+    function client() {
+      if (!window.TrustLayerSDK) {
+        throw new Error("Bundle missing. From TrustLayerSDK run: npm run build");
+      }
+      return TrustLayerSDK.TrustLayer.initialize({
+        apiKey: document.getElementById("apiKey").value,
+        apiUrl: document.getElementById("apiUrl").value,
+      });
+    }
+
+    document.getElementById("file").onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (!file) return;
+      guest.src = URL.createObjectURL(file);
+      guest.muted = false;
+      guest.play();
+      document.getElementById("guestTile").classList.remove("removed");
+      stamp(guestStamp, "loaded");
+    };
+
+    async function watchGuest(voiceOnly) {
+      if (!guest.src && !guest.srcObject) {
+        log("Load a Meet recording or deepfake clip first.");
+        return;
+      }
+      watch?.stop();
+      const tl = client();
+      const session = await tl.createSession({ type: "interview" });
+      watch = await TrustLayerSDK.attachToCall({
+        session,
+        source: guest,
+        platform: "google-meet",
+        participantId: "guest_recording",
+        consent: true,
+        video: !voiceOnly,
+        audio: true,
+        autoRemove: true,
+        intervalMs: 2800,
+        onDecision: (r) => {
+          stamp(guestStamp, r.recommendation);
+          if (r.recommendation === "block") {
+            document.getElementById("guestTile").classList.add("removed");
+            document.querySelector("#guestTile .name").textContent = "Removed · synthetic";
+          }
+          log({
+            tile: "guest",
+            recommendation: r.recommendation,
+            human_probability: r.human_probability,
+            deepfake_risk: r.deepfake_risk,
+            reasons: r.reasons,
+          });
+        },
+      });
+    }
+
+    document.getElementById("watchGuest").onclick = () => watchGuest(false).catch((e) => log(e.message));
+    document.getElementById("watchVoice").onclick = () => watchGuest(true).catch((e) => log(e.message));
+
+    document.getElementById("joinLive").onclick = async () => {
+      try {
+        liveStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        live.srcObject = liveStream;
+        await live.play();
+        const tl = client();
+        const result = await tl.verifyHuman({
+          source: liveStream,
+          consent: true,
+          type: "interview",
+        });
+        stamp(liveStamp, result.recommendation);
+        if (result.recommendation === "block") {
+          TrustLayerSDK.enforceCallDecision(liveStream, "block");
+          document.getElementById("liveTile").classList.add("removed");
+        }
+        log({
+          tile: "live",
+          recommendation: result.recommendation,
+          human_probability: result.human_probability,
+          deepfake_risk: result.deepfake_risk,
+          reasons: result.reasons,
+        });
+      } catch (e) {
+        log(e.message || String(e));
+      }
+    };
+
+    document.getElementById("stopAll").onclick = () => {
+      watch?.stop();
+      watch = null;
+      liveStream?.getTracks().forEach((t) => t.stop());
+      liveStream = null;
+      guest.pause();
+    };
+  </script>
+</body>
+</html>

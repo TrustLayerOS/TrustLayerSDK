@@ -98,6 +98,23 @@ export class TrustLayer {
     return session.verifyHuman(options);
   }
 
+  /**
+   * Voice-only check (cloned speech / replay). Works on a mic or any audio track
+   * from Zoom, Meet-sidecar, Twilio, etc.
+   */
+  async verifyVoice(
+    options: Omit<VerifyHumanOptions, "video" | "liveness"> & Partial<CreateSessionOptions> = {}
+  ): Promise<EvaluationResponse> {
+    const session = await this.createSession({
+      type: options.type ?? "interview",
+      userId: options.userId,
+      modules: options.modules ?? (["interview", "deepfake", "bot"] as TrustModule[]),
+      riskThreshold: options.riskThreshold,
+      metadata: options.metadata,
+    });
+    return session.verifyVoice(options);
+  }
+
   generateKeys(name: string, projectId?: string): Promise<GenerateKeysResponse> {
     return this.apiClient.generateKeys(name, projectId);
   }

@@ -21,6 +21,8 @@ export interface MotionSummary {
   temporal_energy: number;
 }
 
+export type MediaSource = MediaStream | HTMLVideoElement | HTMLAudioElement;
+
 export interface MediaSampler {
   start(opts?: { audio?: boolean; video?: boolean }): Promise<void>;
   sampleFrame(): Promise<FrameSample | null>;
@@ -33,36 +35,101 @@ export function isBrowser(): boolean {
   return typeof window !== "undefined" && typeof navigator !== "undefined";
 }
 
+function isMediaStream(value: unknown): value is MediaStream {
+  return typeof MediaStream !== "undefined" && value instanceof MediaStream;
+}
+
+function captureElementStream(el: HTMLMediaElement): MediaStream | null {
+  const withCapture = el as HTMLMediaElement & {
+    captureStream?: () => MediaStream;
+    mozCaptureStream?: () => MediaStream;
+  };
+  try {
+    return withCapture.captureStream?.() ?? withCapture.mozCaptureStream?.() ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function drawSource(
+  source: HTMLVideoElement | HTMLAudioElement | null
+): HTMLVideoElement | null {
+  return source instanceof HTMLVideoElement ? source : null;
+}
+
+/**
+ * Open the local camera / mic. Stops tracks when `stop()` is called.
+ */
 export async function createMediaSampler(): Promise<MediaSampler> {
-  if (!isBrowser() || !navigator.mediaDevices?.getUserMedia) {
+  return createMediaSamplerFrom(undefined);
+}
+
+/**
+ * Sample an existing Meet / Zoom / LiveKit / file stream without calling
+ * getUserMedia. Does **not** stop the caller's tracks on `stop()`.
+ */
+export async function createMediaSamplerFrom(
+  source?: MediaSource
+): Promise<MediaSampler> {
+  if (!isBrowser()) {
     throw new Error("camera_unavailable");
   }
 
   let stream: MediaStream | null = null;
-  let video: HTMLVideoElement | null = null;
+  let video: HTMLVideoElement | HTMLAudioElement | null = null;
   let canvas: HTMLCanvasElement | null = null;
+  let ownsStream = false;
+  let createdVideo = false;
 
   return {
     async start(opts = { audio: true, video: true }) {
-      stream = await navigator.mediaDevices.getUserMedia({
-        video: opts.video === false ? false : { facingMode: "user", width: 640, height: 480 },
-        audio: opts.audio !== false,
-      });
-      video = document.createElement("video");
-      video.srcObject = stream;
-      video.muted = true;
-      video.playsInline = true;
-      await video.play();
+      if (source === undefined) {
+        if (!navigator.mediaDevices?.getUserMedia) {
+          throw new Error("camera_unavailable");
+        }
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: opts.video === false ? false : { facingMode: "user", width: 640, height: 480 },
+          audio: opts.audio !== false,
+        });
+        ownsStream = true;
+      } else if (isMediaStream(source)) {
+        stream = source;
+      } else {
+        video = source;
+        if (source instanceof HTMLVideoElement && source.readyState < 2) {
+          await new Promise<void>((resolve, reject) => {
+            const ok = () => resolve();
+            const err = () => reject(new Error("media_not_ready"));
+            source.addEventListener("loadeddata", ok, { once: true });
+            source.addEventListener("error", err, { once: true });
+          });
+        }
+        stream =
+          (isMediaStream(source.srcObject) ? source.srcObject : null) ??
+          captureElementStream(source);
+      }
+
+      if (!video && stream && opts.video !== false) {
+        const el = document.createElement("video");
+        el.srcObject = stream;
+        el.muted = true;
+        el.playsInline = true;
+        await el.play().catch(() => undefined);
+        video = el;
+        createdVideo = true;
+      }
+
       canvas = document.createElement("canvas");
       canvas.width = 64;
       canvas.height = 64;
     },
 
     async sampleFrame(): Promise<FrameSample | null> {
-      if (!video || !canvas) return null;
+      const el = drawSource(video);
+      if (!el || !canvas) return null;
       const ctx = canvas.getContext("2d", { willReadFrequently: true });
       if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.drawImage(el, 0, 0, canvas.width, canvas.height);
       const image = ctx.getImageData(0, 0, canvas.width, canvas.height);
       return {
         width: image.width,
@@ -73,27 +140,32 @@ export async function createMediaSampler(): Promise<MediaSampler> {
     },
 
     sampleJpeg(quality = 0.85): string | null {
-      if (!video) return null;
+      const el = drawSource(video);
+      if (!el) return null;
       const shot = document.createElement("canvas");
-      shot.width = video.videoWidth || 640;
-      shot.height = video.videoHeight || 480;
+      shot.width = el.videoWidth || 640;
+      shot.height = el.videoHeight || 480;
       const ctx = shot.getContext("2d");
       if (!ctx) return null;
-      ctx.drawImage(video, 0, 0, shot.width, shot.height);
+      ctx.drawImage(el, 0, 0, shot.width, shot.height);
       return shot.toDataURL("image/jpeg", quality);
     },
 
     async sampleAudio(durationMs = 800): Promise<number[] | null> {
-      if (!stream) return null;
+      let audioStream = stream;
+      if (!audioStream && video) {
+        audioStream = captureElementStream(video);
+      }
+      if (!audioStream || audioStream.getAudioTracks().length === 0) return null;
       const AudioCtx =
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (!AudioCtx) return null;
       const ctx = new AudioCtx();
-      const source = ctx.createMediaStreamSource(stream);
+      const node = ctx.createMediaStreamSource(audioStream);
       const analyser = ctx.createAnalyser();
       analyser.fftSize = 1024;
-      source.connect(analyser);
+      node.connect(analyser);
       await new Promise((r) => setTimeout(r, durationMs));
       const spec = new Float32Array(analyser.frequencyBinCount);
       analyser.getFloatFrequencyData(spec);
@@ -105,12 +177,14 @@ export async function createMediaSampler(): Promise<MediaSampler> {
     },
 
     stop() {
-      stream?.getTracks().forEach((t) => t.stop());
-      stream = null;
-      if (video) {
-        video.srcObject = null;
-        video = null;
+      if (ownsStream) {
+        stream?.getTracks().forEach((t) => t.stop());
       }
+      stream = null;
+      if (createdVideo && video instanceof HTMLVideoElement) {
+        video.srcObject = null;
+      }
+      video = null;
       canvas = null;
     },
   };

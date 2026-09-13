@@ -15,9 +15,11 @@ import { collectIdentitySignals } from "./signals/identity";
 import { Logger } from "./utils/logger";
 import {
   createMediaSampler,
+  createMediaSamplerFrom,
   extractFrameFeatures,
   isBrowser,
   type FrameSample,
+  type MediaSource,
 } from "./signals/media";
 import { runLivenessChallenge, type LivenessPrompt } from "./modules/liveness";
 import { assertMediaConsent } from "./privacy";
@@ -38,6 +40,11 @@ export interface VerifyHumanOptions {
   consent?: boolean;
   onConsent?: () => boolean | Promise<boolean>;
   onPrompt?: (prompt: LivenessPrompt) => void;
+  /**
+   * Existing Meet / Zoom / WebRTC / file stream. When set, the SDK does not
+   * call getUserMedia and liveness defaults to off (remote tiles cannot look left).
+   */
+  source?: MediaSource;
 }
 
 /**
@@ -190,8 +197,24 @@ export class TrustSession {
    * Capture live camera/mic (browser), run a liveness challenge, send
    * forensic features, then return POST /v1/evaluate.
    */
+  /**
+   * Voice-only: sample mic or an existing audio track (Meet / Zoom / file).
+   * Sends `voice_liveness` + `voice_clone_risk`, then evaluate.
+   */
+  async verifyVoice(
+    options: Omit<VerifyHumanOptions, "video" | "liveness"> = {}
+  ): Promise<EvaluationResponse> {
+    return this.verifyHuman({
+      ...options,
+      video: false,
+      liveness: false,
+      audio: true,
+    });
+  }
+
   async verifyHuman(options: VerifyHumanOptions = {}): Promise<EvaluationResponse> {
-    const liveness = options.liveness !== false;
+    const attached = Boolean(options.source);
+    const liveness = attached ? options.liveness === true : options.liveness !== false;
     const video = options.video !== false;
     const audio = options.audio !== false;
 
@@ -215,7 +238,9 @@ export class TrustSession {
     if ((video || audio) && isBrowser()) {
       let sampler;
       try {
-        sampler = await createMediaSampler();
+        sampler = options.source
+          ? await createMediaSamplerFrom(options.source)
+          : await createMediaSampler();
         await sampler.start({ video, audio });
         if (video) {
           let prev: FrameSample | null = null;
@@ -237,7 +262,9 @@ export class TrustSession {
         if (audio) {
           const feats = await sampler.sampleAudio(700);
           if (feats) {
-            await this.trackEvent("voice_liveness", { ml_features: feats, consent: true });
+            const voice = { ml_features: feats, consent: true };
+            await this.trackEvent("voice_liveness", voice);
+            await this.trackEvent("voice_clone_risk", voice);
           }
         }
       } catch (err) {

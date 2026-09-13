@@ -6,11 +6,13 @@ export {
   extractFrameFeatures,
   extractAudioFeatures,
   createMediaSampler,
+  createMediaSamplerFrom,
   motionFromFrames,
   isBrowser,
   type FrameSample,
   type MotionSummary,
   type LivenessChallenge,
+  type MediaSource,
 } from "./media";
 
 import { collectDeviceSignals, DeviceSignals } from "./device";

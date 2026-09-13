@@ -155,17 +155,36 @@ class TrustSession:
                 {**payload, "ml_features": video_features or [], "image_b64": image_b64},
             )
         if audio_features or audio_b64 or audio_pcm:
-            self.track_event(
-                "voice_liveness",
-                {
-                    **payload,
-                    "ml_features": audio_features or [],
-                    "audio_b64": audio_b64,
-                    "audio_pcm": audio_pcm,
-                    "sample_rate": sample_rate,
-                },
-            )
+            audio_payload = {
+                **payload,
+                "ml_features": audio_features or [],
+                "audio_b64": audio_b64,
+                "audio_pcm": audio_pcm,
+                "sample_rate": sample_rate,
+            }
+            self.track_event("voice_liveness", audio_payload)
+            self.track_event("voice_clone_risk", audio_payload)
         return self.evaluate(modules or ["interview", "deepfake", "bot"])
+
+    def verify_voice(
+        self,
+        *,
+        consent: bool = False,
+        audio_features: Optional[list[float]] = None,
+        audio_b64: Optional[str] = None,
+        audio_pcm: Optional[list[float]] = None,
+        sample_rate: int = 16000,
+        modules: Optional[list[str]] = None,
+    ) -> EvaluationResponse:
+        """Audio-only clone / replay check. Same evaluate JSON, no face frames."""
+        return self.verify_human(
+            consent=consent,
+            audio_features=audio_features,
+            audio_b64=audio_b64,
+            audio_pcm=audio_pcm,
+            sample_rate=sample_rate,
+            modules=modules or ["deepfake", "bot"],
+        )
 
     def complete(self) -> EvaluationResponse:
         """
