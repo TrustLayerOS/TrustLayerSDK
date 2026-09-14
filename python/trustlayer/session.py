@@ -146,9 +146,22 @@ class TrustSession:
         if motion:
             payload["motion"] = motion
         if liveness_passed is True:
-            self.track_event("liveness_challenge_passed", {**payload, "passed_client": True})
+            if not motion:
+                from .exceptions import TrustLayerError
+
+                raise TrustLayerError(
+                    "liveness_passed requires motion evidence; "
+                    "use server-issued challenge_id + motion from a live capture"
+                )
+            self.track_event(
+                "liveness_challenge_passed",
+                {**payload, "passed_client": True},
+            )
         elif liveness_passed is False:
-            self.track_event("liveness_challenge_failed", {**payload, "passed_client": False})
+            self.track_event(
+                "liveness_challenge_failed",
+                {**payload, "passed_client": False},
+            )
         if video_features or image_b64:
             self.track_event(
                 "face_frame",

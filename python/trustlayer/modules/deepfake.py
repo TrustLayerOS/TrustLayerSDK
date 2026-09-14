@@ -44,8 +44,17 @@ def extract_frame_features(
     b_mean = b_sum / n
     vec = [0.0] * 32
     vec[0], vec[1], vec[2] = r_mean, g_mean, b_mean
-    vec[3] = vec[4] = vec[5] = 0.15
-    vec[9] = 0.2
+    # Compute real channel std instead of hardcoded placeholders.
+    r_var = g_var = b_var = 0.0
+    for i in range(0, min(len(pixels), n * 4), 4):
+        r_var += (pixels[i] / 255.0 - r_mean) ** 2
+        g_var += (pixels[i + 1] / 255.0 - g_mean) ** 2
+        b_var += (pixels[i + 2] / 255.0 - b_mean) ** 2
+    vec[3] = (r_var / n) ** 0.5
+    vec[4] = (g_var / n) ** 0.5
+    vec[5] = (b_var / n) ** 0.5
+    # Edge energy proxy from channel variance
+    vec[9] = min(1.0, (vec[3] + vec[4] + vec[5]) / 1.5)
     vec[14] = width / 1920.0
     vec[15] = height / 1080.0
     return vec

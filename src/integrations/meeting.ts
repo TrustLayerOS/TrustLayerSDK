@@ -104,6 +104,7 @@ export async function attachToCall(
   let last: EvaluationResponse | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let prev: FrameSample | null = null;
+  let consecutiveFailures = 0;
 
   const tick = async () => {
     if (stopped) return;
@@ -141,6 +142,7 @@ export async function attachToCall(
       }
 
       const result = await options.session.evaluate(["interview", "deepfake", "bot"]);
+      consecutiveFailures = 0;
       last = result;
       options.onDecision?.(result);
       if (options.autoRemove && shouldRemoveParticipant(result.recommendation)) {
@@ -149,8 +151,25 @@ export async function attachToCall(
         sampler.stop();
         return;
       }
-    } catch {
-      // keep watching; next tick retries
+    } catch (err) {
+      consecutiveFailures += 1;
+      options.onDecision?.({
+        session_id: options.session.sessionId,
+        human_probability: 0,
+        deepfake_risk: 1,
+        integrity_score: 0,
+        recommendation: "block",
+        reasons: ["watcher_error", err instanceof Error ? err.message : "unknown"],
+        confidence: 0,
+        trust_score: { trust_score: 0, confidence: 0, status: "high_risk", reasons: [] },
+        risk_score: { risk_score: 100, level: "critical", factors: [], confidence: 0, primary_factors: [] },
+        explanation: [],
+      });
+      if (consecutiveFailures >= 3) {
+        stopped = true;
+        sampler.stop();
+        return;
+      }
     }
     if (!stopped) {
       timer = setTimeout(() => {

@@ -46,11 +46,28 @@ export class ApiClient {
   // ─── Events ────────────────────────────────────────────────────────────────
 
   async sendEvent(req: SendEventRequest): Promise<SendEventResponse> {
-    return this.request<SendEventResponse>("POST", "/v1/events", req);
+    return this.request<SendEventResponse>("POST", "/v1/events", req, { biometric: true });
   }
 
   async sendEventBatch(events: SendEventRequest[]): Promise<{ accepted_count: number; event_ids: string[] }> {
-    return this.request("POST", "/v1/events/batch", { events });
+    return this.request("POST", "/v1/events/batch", { events }, { biometric: true });
+  }
+
+  async issueLivenessChallenge(
+    sessionId: string,
+    count = 3
+  ): Promise<{
+    session_id: string;
+    challenges: Array<{
+      challenge_id: string;
+      action: string;
+      digits?: string;
+      nonce: string;
+      expires_at: string;
+    }>;
+    ttl_seconds: number;
+  }> {
+    return this.request("POST", `/v1/sessions/${sessionId}/liveness/challenge`, { count });
   }
 
   // ─── Trust Intelligence ────────────────────────────────────────────────────
@@ -113,7 +130,8 @@ export class ApiClient {
   async request<T>(
     method: string,
     path: string,
-    body?: unknown
+    body?: unknown,
+    opts?: { biometric?: boolean }
   ): Promise<T> {
     const url = `${this.baseUrl}${path}`;
 
@@ -125,13 +143,19 @@ export class ApiClient {
         const timer = setTimeout(() => controller.abort(), this.timeout);
 
         try {
+          const headers: Record<string, string> = {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.apiKey}`,
+            "X-TrustLayer-SDK": "js/0.1.0",
+            "X-TrustLayer-Nonce": createNonce(),
+          };
+          if (opts?.biometric) {
+            headers["X-TrustLayer-Biometric"] = "1";
+          }
+
           const res = await fetch(url, {
             method,
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${this.apiKey}`,
-              "X-TrustLayer-SDK": "js/0.1.0",
-            },
+            headers,
             body: body !== undefined ? JSON.stringify(body) : undefined,
             signal: controller.signal,
           });
@@ -150,7 +174,6 @@ export class ApiClient {
               // Use default error data
             }
 
-            // Only retry on 5xx, not 4xx
             if (res.status >= 500) {
               throw new TrustLayerError(
                 errorData.message,
@@ -159,7 +182,6 @@ export class ApiClient {
               );
             }
 
-            // 4xx — throw immediately without retry
             throw Object.assign(
               new TrustLayerError(errorData.message, res.status, errorData.error),
               { noRetry: true }
@@ -174,8 +196,15 @@ export class ApiClient {
           throw err;
         }
       },
-      2,   // 2 retries for 5xx
-      500  // 500ms base delay
+      2,
+      500
     );
   }
+}
+
+function createNonce(): string {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) {
+    return crypto.randomUUID();
+  }
+  return `n_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 12)}`;
 }

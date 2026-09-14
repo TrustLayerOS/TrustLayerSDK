@@ -1,6 +1,7 @@
 import { ApiClient } from "../api/client";
 import { EventType, TrustEvent } from "./types";
 import { Logger } from "../utils/logger";
+import { TrustLayerError } from "../api/types";
 
 const BATCH_SIZE = 10;
 const FLUSH_INTERVAL_MS = 2000;
@@ -15,6 +16,7 @@ export class EventEmitter {
   private readonly logger: Logger;
   private queue: TrustEvent[] = [];
   private flushTimer: ReturnType<typeof setInterval> | null = null;
+  private lastFlushError: Error | null = null;
 
   constructor(apiClient: ApiClient, sessionId: string, logger: Logger) {
     this.apiClient = apiClient;
@@ -45,9 +47,17 @@ export class EventEmitter {
 
   /**
    * Immediately sends all queued events.
+   * Throws if the OS rejects the batch — callers must not evaluate on silent loss.
    */
   async flush(): Promise<void> {
-    if (this.queue.length === 0) return;
+    if (this.queue.length === 0) {
+      if (this.lastFlushError) {
+        const err = this.lastFlushError;
+        this.lastFlushError = null;
+        throw err;
+      }
+      return;
+    }
 
     const batch = this.queue.splice(0);
 
@@ -65,11 +75,17 @@ export class EventEmitter {
         await this.apiClient.sendEventBatch(payload);
       }
 
+      this.lastFlushError = null;
       this.logger.debug(`flushed ${batch.length} events`);
     } catch (err) {
       this.logger.error("failed to send event batch", err);
-      // Re-queue failed events (prepend so they go first on next flush)
       this.queue.unshift(...batch);
+      const wrapped =
+        err instanceof Error
+          ? err
+          : new TrustLayerError(String(err), 0, "event_flush_failed");
+      this.lastFlushError = wrapped;
+      throw wrapped;
     }
   }
 
@@ -83,7 +99,11 @@ export class EventEmitter {
 
   private startFlushTimer(): void {
     if (typeof setInterval !== "undefined") {
-      this.flushTimer = setInterval(() => void this.flush(), FLUSH_INTERVAL_MS);
+      this.flushTimer = setInterval(() => {
+        void this.flush().catch(() => {
+          /* retained for next explicit flush */
+        });
+      }, FLUSH_INTERVAL_MS);
     }
   }
 
@@ -97,6 +117,11 @@ export class EventEmitter {
 
 function generateId(): string {
   const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).slice(2, 8);
+  const random =
+    typeof crypto !== "undefined" && "getRandomValues" in crypto
+      ? Array.from(crypto.getRandomValues(new Uint8Array(4)))
+          .map((b) => b.toString(16).padStart(2, "0"))
+          .join("")
+      : Math.random().toString(36).slice(2, 10);
   return `evt_${timestamp}${random}`;
 }

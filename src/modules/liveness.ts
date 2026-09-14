@@ -17,6 +17,8 @@ export interface LivenessPrompt {
   instruction: string;
   index: number;
   total: number;
+  digits?: string;
+  challengeId?: string;
 }
 
 export interface LivenessResult {
@@ -39,20 +41,50 @@ export interface RunLivenessOptions {
   sequence?: LivenessChallenge[];
   holdMs?: number;
   onPrompt?: (prompt: LivenessPrompt) => void;
+  /** Prefer server-issued challenges (required for production authenticity). */
+  useServerChallenges?: boolean;
+}
+
+interface ServerChallenge {
+  challenge_id: string;
+  action: string;
+  digits?: string;
+  nonce: string;
+  expires_at: string;
 }
 
 /**
  * Runs a short challenge-response liveness loop and emits OS events.
+ * Fetches server-issued challenges when available so the OS can bind proofs.
  */
 export async function runLivenessChallenge(
   session: TrustSession,
   opts: RunLivenessOptions = {}
 ): Promise<LivenessResult> {
-  const sequence = opts.sequence ?? DEFAULT_SEQUENCE;
   const holdMs = opts.holdMs ?? 1800;
+  const useServer = opts.useServerChallenges !== false;
+
+  let serverChallenges: ServerChallenge[] = [];
+  if (useServer) {
+    try {
+      const issued = await session.issueLivenessChallenge(
+        opts.sequence?.length ?? 3
+      );
+      serverChallenges = issued.challenges ?? [];
+    } catch {
+      // Fall back to local sequence only when the OS challenge API is unavailable.
+      serverChallenges = [];
+    }
+  }
+
+  const sequence: LivenessChallenge[] =
+    serverChallenges.length > 0
+      ? serverChallenges.map((c) => c.action as LivenessChallenge)
+      : opts.sequence ?? DEFAULT_SEQUENCE;
 
   await session.trackEvent("liveness_challenge_started", {
     challenges: sequence,
+    server_issued: serverChallenges.length > 0,
   });
 
   if (!isBrowser()) {
@@ -78,11 +110,18 @@ export async function runLivenessChallenge(
     let prev: FrameSample | null = null;
     for (let i = 0; i < sequence.length; i++) {
       const challenge = sequence[i];
+      const server = serverChallenges[i];
+      const digits = server?.digits;
       opts.onPrompt?.({
         challenge,
-        instruction: INSTRUCTIONS[challenge],
+        instruction:
+          challenge === "speak_digits" && digits
+            ? `Speak these digits: ${digits}`
+            : INSTRUCTIONS[challenge] ?? `Perform: ${challenge}`,
         index: i,
         total: sequence.length,
+        digits,
+        challengeId: server?.challenge_id,
       });
 
       const before = await sampler.sampleFrame();
@@ -91,6 +130,7 @@ export async function runLivenessChallenge(
       if (!before || !after) {
         await session.trackEvent("liveness_challenge_failed", {
           challenge,
+          challenge_id: server?.challenge_id,
           reason: "no_frame",
         });
         return {
@@ -106,12 +146,26 @@ export async function runLivenessChallenge(
       prev = after;
 
       const ok = motionAgrees(challenge, motion);
-      await session.trackEvent(ok ? "liveness_challenge_passed" : "liveness_challenge_failed", {
+      const payload: Record<string, unknown> = {
         challenge,
         motion,
         ml_features: features,
         passed_client: ok,
-      });
+        image_b64: sampler.sampleJpeg() ?? undefined,
+        consent: true,
+      };
+      if (server?.challenge_id) {
+        payload.challenge_id = server.challenge_id;
+      }
+      if (digits) {
+        (payload.motion as MotionSummary & { expected_digits?: string }).expected_digits =
+          digits;
+      }
+
+      await session.trackEvent(
+        ok ? "liveness_challenge_passed" : "liveness_challenge_failed",
+        payload
+      );
 
       if (!ok) {
         return {
@@ -131,14 +185,14 @@ export async function runLivenessChallenge(
 function motionAgrees(challenge: LivenessChallenge, motion: MotionSummary): boolean {
   switch (challenge) {
     case "look_left":
-      return motion.left_right_delta < -0.008;
+      return motion.left_right_delta < -0.012;
     case "look_right":
-      return motion.left_right_delta > 0.008;
+      return motion.left_right_delta > 0.012;
     case "blink":
-      return Math.abs(motion.blink_delta) > 0.004 || motion.temporal_energy > 0.01;
+      return Math.abs(motion.blink_delta) > 0.006 || motion.temporal_energy > 0.015;
     case "speak_digits":
-      return motion.temporal_energy > 0.008;
+      return motion.temporal_energy > 0.012;
     default:
-      return motion.temporal_energy > 0.005;
+      return false;
   }
 }

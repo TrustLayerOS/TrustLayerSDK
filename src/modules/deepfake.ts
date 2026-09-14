@@ -88,13 +88,9 @@ function toVideoFeatures(
     return frameData;
   }
   if (typeof frameData === "string") {
-    // Last-resort path for callers who still pass a data URL — hash is not a detector.
-    // Prefer ImageData / FrameSample.
-    const n = frameData.length;
-    const vec = new Array(32).fill(0);
-    vec[0] = Math.min(1, n / 200000);
-    vec[31] = 0.4;
-    return vec;
+    throw new Error(
+      "data-URL frame stubs are not accepted — pass ImageData, FrameSample, or a real feature vector"
+    );
   }
   const sample: FrameSample = {
     width: frameData.width,

@@ -6,6 +6,7 @@ Handles authentication, retries, and error mapping.
 from __future__ import annotations
 
 import time
+import uuid
 from typing import Any, Optional, Type, TypeVar
 
 import httpx
@@ -96,10 +97,16 @@ class HttpClient:
 
         for attempt in range(_MAX_RETRIES + 1):
             try:
+                headers = {
+                    "X-TrustLayer-Nonce": str(uuid.uuid4()),
+                }
+                if path.startswith("/v1/events"):
+                    headers["X-TrustLayer-Biometric"] = "1"
                 response = self._client.request(
                     method=method,
                     url=url,
                     json=body,
+                    headers=headers,
                 )
             except httpx.TimeoutException as exc:
                 last_error = TrustLayerError(

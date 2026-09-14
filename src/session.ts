@@ -5,6 +5,7 @@ import {
   TrustScoreResponse,
   RiskScoreResponse,
   EvaluationResponse,
+  TrustLayerError,
 } from "./api/types";
 import { EventEmitter } from "./events/emitter";
 import { EventType } from "./events/types";
@@ -113,13 +114,9 @@ export class TrustSession {
     this.emitter = new EventEmitter(apiClient, data.id, logger);
     this.behaviorCollector = new BehaviorCollector();
 
-    // Emit session started event
     this.emitter.emit("session_started", { type: data.type });
   }
 
-  /**
-   * Tracks a trust event for this session.
-   */
   async trackEvent(
     type: EventType,
     data?: Record<string, unknown>
@@ -127,9 +124,10 @@ export class TrustSession {
     this.emitter.emit(type, data);
   }
 
-  /**
-   * Starts automatic signal collection (device, behavior, network).
-   */
+  async issueLivenessChallenge(count = 3) {
+    return this.apiClient.issueLivenessChallenge(this.sessionId, count);
+  }
+
   startSignalCollection(): void {
     if (this.collectingSignals) return;
     this.collectingSignals = true;
@@ -140,15 +138,10 @@ export class TrustSession {
       this.behaviorCollector.start();
     }
 
-    // Collect static signals once and send as an event
     void this.sendInitialSignals(sigConfig);
-
     this.logger.debug("signal collection started");
   }
 
-  /**
-   * Stops automatic signal collection and flushes behavioral signals.
-   */
   stopSignalCollection(): void {
     if (!this.collectingSignals) return;
     this.collectingSignals = false;
@@ -156,10 +149,9 @@ export class TrustSession {
     const signals = this.behaviorCollector.getSignals();
     this.behaviorCollector.stop();
 
-    // Send final behavioral snapshot
     this.emitter.emit("mouse_activity", {
       mouse_movements: signals.mouseMovements,
-      velocity_variance: 0.5,
+      velocity_variance: signals.mouseMovements > 5 ? 0.35 : 0.02,
     });
 
     if (signals.keystrokes > 0) {
@@ -196,10 +188,6 @@ export class TrustSession {
   }
 
   /**
-   * Capture live camera/mic (browser), run a liveness challenge, send
-   * forensic features, then return POST /v1/evaluate.
-   */
-  /**
    * Voice-only: sample mic or an existing audio track (Meet / Zoom / file).
    * Sends `voice_liveness` + `voice_clone_risk`, then evaluate.
    */
@@ -211,6 +199,7 @@ export class TrustSession {
       video: false,
       liveness: false,
       audio: true,
+      modules: options.modules ?? ["deepfake", "bot"],
     });
   }
 
@@ -234,9 +223,18 @@ export class TrustSession {
     }
 
     if (liveness) {
-      await runLivenessChallenge(this, { onPrompt: options.onPrompt });
+      const live = await runLivenessChallenge(this, { onPrompt: options.onPrompt });
+      if (!live.passed) {
+        await this.emitter.flush();
+        throw new TrustLayerError(
+          `liveness_failed:${live.reason ?? "challenge"}`,
+          403,
+          "liveness_failed"
+        );
+      }
     }
 
+    let capturedMedia = false;
     if ((video || audio) && isBrowser()) {
       let sampler;
       try {
@@ -257,16 +255,18 @@ export class TrustSession {
                 consent: true,
               });
               prev = frame;
+              capturedMedia = true;
             }
             await new Promise((r) => setTimeout(r, 250));
           }
         }
         if (audio) {
-          const feats = await sampler.sampleAudio(700);
+          const feats = await sampler.sampleAudio(1200);
           if (feats) {
             const voice = { ml_features: feats, consent: true };
             await this.trackEvent("voice_liveness", voice);
             await this.trackEvent("voice_clone_risk", voice);
+            capturedMedia = true;
           }
         }
       } catch (err) {
@@ -274,8 +274,22 @@ export class TrustSession {
           reason: "no_camera",
           error: err instanceof Error ? err.message : String(err),
         });
+        await this.emitter.flush();
+        throw new TrustLayerError(
+          err instanceof Error ? err.message : "media_capture_failed",
+          403,
+          "media_capture_failed"
+        );
       } finally {
         sampler?.stop();
+      }
+
+      if ((video || audio) && !capturedMedia) {
+        throw new TrustLayerError(
+          "required media samples were not captured",
+          403,
+          "insufficient_media"
+        );
       }
     } else if ((video || audio) && !isBrowser()) {
       await this.trackEvent("custom", {

@@ -2,7 +2,8 @@ import type { EvaluationResponse } from "../api/types";
 import { DEFAULT_API_URL } from "../config";
 
 export const SESSION_HEADER = "x-trustlayer-session";
-export const DEFAULT_SESSION_MAX_AGE_MS = 30 * 60 * 1000;
+/** Short window — stolen session ids should not unlock sensitive actions for long. */
+export const DEFAULT_SESSION_MAX_AGE_MS = 5 * 60 * 1000;
 
 export type HumanCheckFailure = {
   ok: false;
@@ -77,6 +78,19 @@ export async function assertRecentAllow(
   const evaluation = (await evRes.json()) as EvaluationResponse;
   if (evaluation.recommendation !== "allow") {
     return { ok: false, status: 403, reason: evaluation.recommendation };
+  }
+  // Require a positive human signal — recommendation alone is insufficient.
+  if (
+    typeof evaluation.human_probability === "number" &&
+    evaluation.human_probability < 0.55
+  ) {
+    return { ok: false, status: 403, reason: "low_human_probability" };
+  }
+  if (
+    typeof evaluation.deepfake_risk === "number" &&
+    evaluation.deepfake_risk > 0.45
+  ) {
+    return { ok: false, status: 403, reason: "high_deepfake_risk" };
   }
   return { ok: true, evaluation };
 }
