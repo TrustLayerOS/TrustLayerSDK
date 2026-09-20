@@ -21,7 +21,8 @@
       <li><strong>3 · Window-switch</strong> (no camera)</li>
       <li><strong>4 · Empty bot</strong> (no camera)</li>
     </ol>
-    <p>Script: <code>TrustLayerDocs/10-Roadmap/demo-script.md</code>. Compose: <code>docker compose up --build</code> in TrustLayerOS so evaluate hits the API. Without the API the page falls back to <code>POST /ml/evaluate</code>.</p>
+    <p>Script: <code>TrustLayerDocs/10-Roadmap/demo-script.md</code>. Compose: <code>docker compose up --build</code> in TrustLayerOS first — the scene buttons stay disabled until the API can record the run, so nothing is demoed off the record.</p>
+    <p>Runs land in the org that owns the API key. The default demo key belongs to <code>org_dev</code>; sign in at <a href="http://localhost:3000">localhost:3000</a> as <code>demo@trustlayer.local</code> / <code>trustlayer-demo</code> to see them under Sessions. For a different org, paste that org's public key into the demo page or open <code>/demo?key=tl_public_…</code>.</p>
   </div>
 </body>
 </html>
