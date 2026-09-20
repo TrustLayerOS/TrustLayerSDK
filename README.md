@@ -1,35 +1,75 @@
 # TrustLayer SDK
 
-**The API you call before you trust the other side.**
+**The client you call before you trust the other side.**
 
-Know whether a session is a live human — not a deepfake, replay, or empty bot — without storing raw video.
+TrustLayer SDK captures session signals (behavior, device, network, camera, microphone), sends them to **TrustLayerOS**, and returns a decision your product can enforce: **allow · monitor · verify · review · block**.
+
+It proves whether *this* session looks like a live human — not a deepfake, replay, or empty bot — without turning your app into a KYC vendor or a CAPTCHA.
 
 ```ts
+import TrustLayer from "@trustlayer/sdk"
+
+const tl = TrustLayer.initialize({
+  apiKey: process.env.TRUSTLAYER_PUBLIC_KEY!,
+  apiUrl: "http://127.0.0.1:8080",
+})
+
 const result = await tl.verifyHuman({ type: "interview", consent: true })
 
-result.recommendation     // "allow" | "verify" | "review" | "block"
+result.recommendation     // "allow" | "verify" | "review" | "block" | …
 result.human_probability  // 0–1
+result.deepfake_risk      // 0–1
 ```
 
-[![version](https://img.shields.io/badge/version-0.1.0-0F172A?style=flat)](#)
-[![license](https://img.shields.io/badge/license-MIT-0F172A?style=flat)](./LICENSE)
-[![node](https://img.shields.io/badge/node-%3E%3D18-339933?style=flat&logo=nodedotjs&logoColor=white)](#)
-[![typescript](https://img.shields.io/badge/TypeScript-first-3178C6?style=flat&logo=typescript&logoColor=white)](#)
-[![python](https://img.shields.io/badge/Python-3.9%2B-3776AB?style=flat&logo=python&logoColor=white)](#)
+```
+Your app  →  TrustLayer SDK  →  TrustLayerOS (/v1/sessions · /v1/events · /v1/evaluate)
+                                      →  allow / verify / block
+```
 
-TypeScript / JavaScript · Python · React · Express / Next.js · Browser IIFE
+| | |
+|---|---|
+| **npm** | `@trustlayer/sdk` `0.1.0` |
+| **PyPI** | `trustlayer` `0.1.0` |
+| **Node** | ≥ 18 |
+| **Python** | ≥ 3.9 |
+| **License** | MIT |
+| **Surfaces** | TypeScript / ESM+CJS · React · Express/Next middleware · Browser IIFE · Python |
+
+---
+
+## Table of contents
+
+1. [Why this exists](#why-this-exists)
+2. [Install](#install)
+3. [Initialize](#initialize)
+4. [Quick starts](#quick-starts)
+5. [Session lifecycle](#session-lifecycle)
+6. [Modules & threats](#modules--threats)
+7. [Signal collection](#signal-collection)
+8. [Evaluation response](#evaluation-response)
+9. [React](#react)
+10. [Server middleware](#server-middleware)
+11. [Meetings & continuous watch](#meetings--continuous-watch)
+12. [Python](#python)
+13. [Webhooks](#webhooks)
+14. [Configuration reference](#configuration-reference)
+15. [Package exports](#package-exports)
+16. [Privacy](#privacy)
+17. [Examples](#examples)
+18. [Talks to TrustLayerOS](#talks-to-trustlayeros)
+19. [Status & honesty](#status--honesty)
 
 ---
 
 ## Why this exists
 
-CAPTCHA proves a client is not a cheap bot. IDV proves a document once. Neither proves the person on *this* call is live and unassisted.
+| Existing tool | What it proves | Gap |
+|---|---|---|
+| CAPTCHA / Turnstile | Cheap bots at the edge | Not live video authenticity |
+| Persona / Onfido | Document identity once | Not continuous during the call |
+| Worldcoin-style PoP | Unique personhood | Different category — not session risk |
 
-TrustLayer is the session layer in between: capture signals, score them, return a decision your app can act on.
-
-```
-your app  →  TrustLayer.verifyHuman()  →  TrustLayerOS  →  allow / verify / block
-```
+TrustLayer is the **session authenticity** layer: capture signals → score → decide. Use it for interviews, onboarding calls, high-risk transactions, and agent interactions.
 
 ---
 
@@ -43,295 +83,26 @@ npm install @trustlayer/sdk
 pip install trustlayer
 ```
 
-Use a **public** key (`tl_public_…`) in the browser. Keep **secret** keys (`tl_secret_…`) on the server.
+| Key type | Prefix | Where |
+|---|---|---|
+| Public | `tl_public_…` | Browser / mobile client |
+| Secret | `tl_secret_…` | Server only |
 
-Point `apiUrl` at your TrustLayerOS instance. Local default: `http://127.0.0.1:8080`.
+Create keys in the TrustLayerOS dashboard or via `POST /v1/auth/keys`.
 
 ---
 
-## Quick start
-
-### Browser / Node
+## Initialize
 
 ```ts
 import TrustLayer from "@trustlayer/sdk"
 
 const tl = TrustLayer.initialize({
-  apiKey: process.env.TRUSTLAYER_PUBLIC_KEY!,
-  apiUrl: "http://127.0.0.1:8080",
-})
-
-const result = await tl.verifyHuman({
-  type: "interview",
-  consent: true, // required before camera / mic
-})
-
-if (result.recommendation === "allow") {
-  // continue the interview
-}
-```
-
-`verifyHuman()` creates a session, runs a liveness challenge in the browser, sends features (not a raw video dump), and returns `POST /v1/evaluate`.
-
-### One call per threat
-
-```ts
-await tl.check({ threats: ["human"], consent: true })          // live person
-await tl.check({ threats: ["voice"], source: audio, consent: true })
-await tl.check({ threats: ["video"], source: tile, consent: true })
-await tl.check({ threats: ["bot"] })
-await tl.check({ threats: ["spam"], text: messageBody })
-await tl.check({ threats: ["agent"], agentId: "agt_1", ownerOrg: "acme" })
-await tl.check({ threats: ["fraud"] })
-await tl.check({ threats: ["ai"], text: outboundCopy })        // assisted / templated
-```
-
-Same JSON: `recommendation` + `modules.deepfake | bot | spam | agent | fraud | anomaly`.
-
-Shields other than interview / deepfake / bot are **heuristic**. Act on `recommendation`; do not claim a trained spam or agent model.
-
-### Meet, Zoom, and any WebRTC app
-
-Google Meet and Zoom do not let a third-party script read their tiles. Pass the `MediaStream` you already have from a Video SDK, LiveKit, Daily, Twilio, or your own room.
-
-```ts
-import TrustLayer, { attachToCall } from "@trustlayer/sdk"
-
-// One-shot on a Zoom / LiveKit / file stream
-await tl.verifyHuman({
-  source: participantStream,
-  consent: true,
-  liveness: false,
-})
-
-// Voice clone / replay only
-await tl.verifyVoice({ source: audioStream, consent: true })
-
-// Keep watching; on block, mute and blur the tile you control
-const session = await tl.createSession({ type: "interview" })
-await attachToCall({
-  session,
-  source: participantStream,
-  platform: "zoom",
-  participantId: "user_123",
-  consent: true,
-  autoRemove: true,
-  onDecision: (r) => {
-    if (r.recommendation === "block") {
-      // kick via your host API — the SDK can only mute a stream it was given
-    }
-  },
-})
-```
-
-Meet-lookalike demo (recording → deepfake tile removed → you join live): `examples/meeting-sidecar.html`. Shot list: `TrustLayerDocs/10-Roadmap/meet-zoom-demo.md`.
-
-### React
-
-```tsx
-import { useVerifyHuman } from "@trustlayer/sdk/react"
-
-export function VerifyButton() {
-  const { verify, status, result, error } = useVerifyHuman({
-    apiKey: import.meta.env.VITE_TRUSTLAYER_PUBLIC_KEY,
-    apiUrl: import.meta.env.VITE_TRUSTLAYER_API_URL,
-  })
-
-  return (
-    <button
-      disabled={status === "running"}
-      onClick={() => verify({ type: "interview", consent: true })}
-    >
-      {status === "running" ? "Checking…" : "Verify human"}
-      {result && <span> → {result.recommendation}</span>}
-    </button>
-  )
-}
-```
-
-### Protect a route
-
-The client sends the session id from `verifyHuman()` as `X-TrustLayer-Session`. Middleware re-evaluates and requires `recommendation === "allow"`.
-
-```ts
-import express from "express"
-import { requireHuman } from "@trustlayer/sdk/middleware"
-
-const app = express()
-
-app.post(
-  "/payout",
-  requireHuman({
-    apiKey: process.env.TRUSTLAYER_SECRET_KEY!,
-    apiUrl: process.env.TRUSTLAYER_API_URL,
-  }),
-  (req, res) => {
-    res.json({ ok: true, human: req.trustlayer?.human_probability })
-  }
-)
-```
-
-Next.js App Router:
-
-```ts
-import { NextResponse } from "next/server"
-import { nextRequireHuman } from "@trustlayer/sdk/middleware"
-
-export async function POST(request: Request) {
-  const check = await nextRequireHuman(request, {
-    apiKey: process.env.TRUSTLAYER_SECRET_KEY!,
-    apiUrl: process.env.TRUSTLAYER_API_URL,
-  })
-  if (!check.ok) {
-    return NextResponse.json(check.body, { status: check.status })
-  }
-  return NextResponse.json({ recommendation: check.evaluation.recommendation })
-}
-```
-
-### Python
-
-```python
-from trustlayer import TrustLayer
-
-with TrustLayer(api_key="tl_secret_xxx", api_url="http://127.0.0.1:8080") as tl:
-    result = tl.verify_human(
-        type="interview",
-        consent=True,
-        image_b64=jpeg_b64,   # Python cannot open a webcam
-    )
-    print(result.recommendation, result.human_probability)
-```
-
----
-
-## What you get back
-
-```json
-{
-  "session_id": "sess_…",
-  "human_probability": 0.91,
-  "deepfake_risk": 0.08,
-  "integrity_score": 82,
-  "recommendation": "allow",
-  "reasons": ["liveness_passed", "low_window_switch"],
-  "modules": {
-    "interview": {},
-    "deepfake": {},
-    "bot": {}
-  }
-}
-```
-
-| Field | Meaning |
-|---|---|
-| `recommendation` | Policy decision: `allow`, `verify`, `review`, `block` (also `monitor`) |
-| `human_probability` | Blend of bot inverse, interview identity consistency, and `1 − deepfake` — not a trained personhood model |
-| `deepfake_risk` | Server-side media score when frames / audio were sent |
-| `integrity_score` | Interview-style session integrity (window switches, assistance signals) |
-| `reasons` | Human-readable factors your UI can show |
-
-Act on `recommendation`. Treat the probabilities as **uncalibrated** until you have a labeled set.
-
----
-
-## Sessions
-
-Need more control than the one-shot? Use the session API.
-
-```ts
-const session = await tl.createSession({
-  type: "interview",
-  userId: "candidate_123",
-  modules: ["interview", "deepfake", "bot"],
-})
-
-session.startSignalCollection()
-await session.trackEvent("window_switch", { count: 1 })
-
-const result = await session.evaluate()
-await session.complete()
-```
-
-```
-initialize → createSession → collect / trackEvent → evaluate → complete
-```
-
-| `type` | When to use it |
-|---|---|
-| `interview` | Live hiring or video calls |
-| `authentication` | Login / step-up |
-| `user_verification` | Generic presence check |
-| `transaction` | High-risk money movement |
-| `agent` | Machine-to-machine later |
-
----
-
-## Privacy
-
-Media is opt-in. The SDK will not open the camera or microphone without `consent: true` (or a confirmed `onConsent` callback).
-
-What leaves the device by default:
-
-- Forensic **features** and short sampled JPEGs / audio windows for scoring
-- Coarse device / behavior signals if you call `startSignalCollection()`
-
-What does not leave the device by default:
-
-- A continuous raw video recording
-
-TrustLayerOS fails closed on biometric ingest without consent, strips raw blobs after scoring, and can encrypt stored feature vectors. Your backend should still treat secret keys and webhook secrets as production credentials.
-
----
-
-## Webhooks
-
-TrustLayerOS signs every delivery as:
-
-```
-HMAC-SHA256(secret, timestamp + "." + rawBody)
-```
-
-Headers: `X-TrustLayer-Signature` (`sha256=<hex>`), `X-TrustLayer-Timestamp` (unix seconds). Stamps older than 5 minutes are rejected.
-
-```ts
-import { verifyWebhookSignature } from "@trustlayer/sdk"
-
-app.post("/webhooks/trustlayer", express.raw({ type: "application/json" }), async (req, res) => {
-  const ok = await verifyWebhookSignature(
-    req.body.toString("utf8"),
-    String(req.headers["x-trustlayer-signature"] ?? ""),
-    process.env.WEBHOOK_SECRET!,
-    String(req.headers["x-trustlayer-timestamp"] ?? "")
-  )
-  if (!ok) return res.status(401).end()
-
-  const event = JSON.parse(req.body.toString("utf8"))
-  // session.completed | risk.detected | policy.action | …
-  res.json({ received: true })
-})
-```
-
-Register an endpoint with a **secret** key. The webhook secret is returned **once** at create time — store it.
-
-```ts
-const hook = await tl.registerWebhook("https://example.com/webhooks/trustlayer", [
-  "session.completed",
-  "risk.detected",
-])
-// hook.secret
-```
-
----
-
-## Configuration
-
-```ts
-TrustLayer.initialize({
-  apiKey: "tl_public_…",          // required
-  apiUrl: "https://api.example",  // default: https://api.trustlayer.dev
-  timeout: 20_000,                // ms
+  apiKey: process.env.TRUSTLAYER_PUBLIC_KEY!, // required
+  apiUrl: "http://127.0.0.1:8080",           // your TrustLayerOS base URL
+  timeout: 20_000,                           // optional, ms
   debug: false,
+  // Optional defaults applied to new sessions:
   modules: ["interview", "deepfake", "bot"],
   signalCollection: {
     device: true,
@@ -342,72 +113,411 @@ TrustLayer.initialize({
 })
 ```
 
-| Export | Import |
-|---|---|
-| Client, sessions, types, webhook verify | `@trustlayer/sdk` |
-| `useVerifyHuman()` | `@trustlayer/sdk/react` |
-| `requireHuman`, `nextRequireHuman` | `@trustlayer/sdk/middleware` |
-| Browser bundle | `dist/trustlayer.iife.global.js` → `TrustLayerSDK` |
-
-Server helpers (secret key or JWT): `generateKeys()`, `issueToken()`, `registerWebhook()`, `listWebhooks()`, `deleteWebhook()`.
+Default cloud `apiUrl` is `https://api.trustlayer.dev`. For local OS: `http://127.0.0.1:8080`.
 
 ---
 
-## Local demo
+## Quick starts
 
-The GPU webcam path lives in TrustLayerOS, not this package.
+### One-shot human check (browser)
 
-```powershell
-# from TrustLayerOS
-powershell -ExecutionPolicy Bypass -File ml\run_demo.ps1
+```ts
+const result = await tl.verifyHuman({
+  type: "interview",
+  consent: true, // required before camera / mic
+})
+
+if (result.recommendation === "allow") {
+  // continue
+} else if (result.recommendation === "block") {
+  // stop the flow
+} else {
+  // verify | review | monitor → step-up UX
+}
 ```
 
-Open [http://127.0.0.1:8001/demo](http://127.0.0.1:8001/demo).
+`verifyHuman()` creates a session, starts collectors, runs a liveness challenge (browser), posts feature events, and calls `POST /v1/evaluate`.
 
-To exercise the published client against a running API:
+### Threat-oriented API
+
+```ts
+await tl.check({ threats: ["human"], consent: true })
+await tl.check({ threats: ["voice"], source: audioEl, consent: true })
+await tl.check({ threats: ["bot"] })
+await tl.check({ threats: ["fraud", "anomaly"] })
+```
+
+### Server-side (no webcam)
+
+```ts
+const tl = TrustLayer.initialize({
+  apiKey: process.env.TRUSTLAYER_SECRET_KEY!,
+  apiUrl: process.env.TRUSTLAYER_API_URL!,
+  signalCollection: {
+    device: false,
+    behavior: false,
+    network: false,
+    identity: false,
+  },
+})
+
+const session = await tl.createSession({ type: "authentication", userId: "usr_123" })
+await session.trackEvent("login_attempt", { success: false })
+const result = await session.evaluate(["fraud", "bot"])
+await session.complete()
+```
+
+---
+
+## Session lifecycle
+
+```
+createSession  →  startSignalCollection / trackEvent  →  evaluate  →  complete
+                      ↑                                         │
+                      └──────── flush batched events ───────────┘
+```
+
+| Step | SDK | OS API |
+|---|---|---|
+| Create | `tl.createSession({ type, userId?, modules? })` | `POST /v1/sessions` |
+| Emit | `session.trackEvent(type, data?)` | `POST /v1/events` · `/events/batch` |
+| Liveness | `session.issueLivenessChallenge()` | `POST /v1/sessions/:id/liveness/challenge` |
+| Decide | `session.evaluate(modules?)` · `tl.verifyHuman()` | `POST /v1/evaluate` |
+| Finish | `session.complete()` | `POST /v1/sessions/:id/complete` |
+
+**Session types:** `user_verification` · `interview` · `transaction` · `authentication` · `agent`
+
+Events are **batched** (flush every ~2s or when the queue ≥ 10). Evaluate and complete flush first. There is no WebSocket evaluate stream; use `attachToCall` for polling during a live call.
+
+---
+
+## Modules & threats
+
+Modules map to TrustLayerOS shield runners:
+
+| Module ID | Intent |
+|---|---|
+| `interview` | Window-switch / AI-assist integrity |
+| `deepfake` | Face, liveness, voice-clone risk |
+| `bot` / `bot_detection` | Automation / empty session |
+| `fraud` | Device / login / network fraud cues |
+| `anomaly` | Session deviations |
+| `spam` | Spammy patterns |
+| `agent` | Agent behavior risk |
+
+### `check({ threats })` mapping (summary)
+
+| Threat | Modules (approx.) |
+|---|---|
+| `human` | interview, deepfake, bot |
+| `voice` / `video` / `deepfake` | deepfake, bot |
+| `bot` | bot |
+| `fraud` | fraud, anomaly |
+| `anomaly` | anomaly |
+| `spam` | spam |
+| `agent` | agent, bot |
+| `ai` | interview, spam, bot |
+
+### Shield helpers
+
+```ts
+const session = await tl.createSession({ type: "interview" })
+
+await tl.interview(session).startMonitoring()
+await tl.interview(session).reportWindowSwitch({ app: "ChatGPT" })
+const integrity = await tl.interview(session).getIntegrityScore()
+
+await tl.fraud(session).evaluate({ transactionAmount: 1200 })
+await tl.bot(session).evaluate()
+await tl.deepfake(session).evaluate()
+await tl.anomaly(session).evaluate()
+```
+
+---
+
+## Signal collection
+
+Enabled via `signalCollection` (all default **on** in the browser):
+
+| Collector | Signals / events |
+|---|---|
+| **device** | UA, platform, screen, canvas/WebGL cues → `device_change` |
+| **behavior** | Mouse, typing cadence, clicks, visibility → `mouse_activity`, `typing_pattern`, `window_switch` |
+| **network** | Connection API + locale cues → `custom` (`signal_type: network`) |
+| **identity** | Tab consistency / referrer / origin → `custom` (`signal_type: identity`) |
+| **media** | Short frame/audio windows + forensic features → `face_frame`, `voice_liveness`, `voice_clone_risk` |
+
+### Liveness challenges
+
+Challenge types: `look_left` · `look_right` · `blink` · `speak_digits`.
+
+Prefer server-issued challenges (`issueLivenessChallenge`); the SDK falls back to a local default set. Events: `liveness_challenge_started` / `_passed` / `_failed`.
+
+---
+
+## Evaluation response
+
+Act on `recommendation`. Treat probabilities as calibrated **session** scores, not personhood.
+
+```ts
+interface EvaluationResponse {
+  session_id: string
+  human_probability: number
+  deepfake_risk: number
+  integrity_score: number
+  recommendation: "allow" | "monitor" | "verify" | "review" | "block"
+  reasons: string[]
+  confidence: number
+  trust_score: { /* … */ }
+  risk_score: { /* … */ }
+  modules?: { interview?, deepfake?, bot?, fraud?, anomaly?, … }
+  field_provenance?: { field: string; source: string; note: string }[]
+}
+```
+
+| Recommendation | Typical product action |
+|---|---|
+| `allow` | Continue |
+| `monitor` | Continue + alert |
+| `verify` | Step-up (extra liveness / manual) |
+| `review` | Queue for human review |
+| `block` | Stop the interaction |
+
+---
+
+## React
+
+```bash
+npm install @trustlayer/sdk
+# peer: react >= 18 (optional peerDependency)
+```
+
+```tsx
+import { useVerifyHuman } from "@trustlayer/sdk/react"
+
+export function Gate() {
+  const { verify, status, result, error, reset } = useVerifyHuman({
+    apiKey: process.env.NEXT_PUBLIC_TRUSTLAYER_KEY!,
+    apiUrl: process.env.NEXT_PUBLIC_TRUSTLAYER_URL,
+  })
+
+  return (
+    <button
+      disabled={status === "running"}
+      onClick={() => verify({ type: "interview", consent: true })}
+    >
+      {status === "running" ? "Checking…" : "Verify human"}
+    </button>
+  )
+}
+```
+
+`status`: `idle` | `running` | `done` | `error`.
+
+---
+
+## Server middleware
+
+Protect routes that require a recent successful evaluate.
+
+```ts
+import { requireHuman, SESSION_HEADER } from "@trustlayer/sdk/middleware"
+// Client must send header: X-TrustLayer-Session: sess_…
+
+app.post(
+  "/start-interview",
+  requireHuman({
+    apiKey: process.env.TRUSTLAYER_SECRET_KEY!,
+    apiUrl: process.env.TRUSTLAYER_API_URL,
+  }),
+  handler,
+)
+```
+
+Next.js App Router:
+
+```ts
+import { nextRequireHuman } from "@trustlayer/sdk/middleware"
+
+export async function POST(request: Request) {
+  const gate = await nextRequireHuman(request, {
+    apiKey: process.env.TRUSTLAYER_SECRET_KEY!,
+  })
+  if (gate instanceof Response) return gate
+  // gate.sessionId, gate.evaluation
+}
+```
+
+`assertRecentAllow` re-evaluates and requires `recommendation === "allow"`, `human_probability ≥ 0.55`, `deepfake_risk ≤ 0.45`, and session age within a configurable window (default **5 minutes**).
+
+---
+
+## Meetings & continuous watch
+
+For calls where you own a `MediaStream` or media element:
+
+```ts
+import { attachToCall, enforceCallDecision } from "@trustlayer/sdk"
+
+const session = await tl.createSession({ type: "interview" })
+const watch = attachToCall({
+  session,
+  source: localVideo.srcObject as MediaStream,
+  consent: true,
+  intervalMs: 2500,
+  onDecision: (result) => {
+    if (enforceCallDecision(result).shouldRemove) {
+      // remove participant / end call
+    }
+  },
+})
+
+// later
+watch.stop()
+```
+
+Meet/Zoom tile pixels are **not** readable unless your app owns the stream (use a sidecar or meeting bot that captures an authorized stream).
+
+---
+
+## Python
+
+```python
+from trustlayer import TrustLayer
+
+with TrustLayer(
+    api_key="tl_secret_…",
+    api_url="http://127.0.0.1:8080",
+) as tl:
+    session = tl.create_session(type="authentication", user_id="usr_123")
+    session.track_event("login_attempt", {"success": False})
+    result = session.evaluate(modules=["fraud", "bot"])
+    print(result.recommendation, result.human_probability)
+    session.complete()
+```
+
+Python does not open a webcam; pass `image_b64` / PCM / precomputed features into `verify_human` when scoring media. See `python/README.md` and `python/examples/`.
+
+---
+
+## Webhooks
+
+```ts
+import {
+  verifyWebhookSignature,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "@trustlayer/sdk"
+
+const ok = verifyWebhookSignature({
+  secret: process.env.TRUSTLAYER_WEBHOOK_SECRET!,
+  rawBody,
+  signatureHeader: req.header(WEBHOOK_SIGNATURE_HEADER)!,
+  timestampHeader: req.header(WEBHOOK_TIMESTAMP_HEADER)!,
+  maxAgeSeconds: 300,
+})
+```
+
+Scheme: `HMAC-SHA256(secret, timestamp + "." + rawBody)` → header `X-TrustLayer-Signature: sha256=<hex>`.
+
+Register endpoints with `tl.registerWebhook({ url, events })` (secret key).
+
+---
+
+## Configuration reference
+
+| Option | Type | Default | Notes |
+|---|---|---|---|
+| `apiKey` | string | — | **Required** |
+| `apiUrl` | string | `https://api.trustlayer.dev` | TrustLayerOS base URL |
+| `timeout` | number | `20000` | Request timeout (ms) |
+| `debug` | boolean | `false` | Verbose logs |
+| `modules` | `TrustModule[]` | — | Default modules for new sessions |
+| `signalCollection.device` | boolean | `true` | |
+| `signalCollection.behavior` | boolean | `true` | |
+| `signalCollection.network` | boolean | `true` | |
+| `signalCollection.identity` | boolean | `true` | |
+
+Headers sent automatically: `Authorization: Bearer …`, `X-TrustLayer-SDK: js/0.1.0`, `X-TrustLayer-Nonce`, and `X-TrustLayer-Biometric: 1` on biometric posts.
+
+---
+
+## Package exports
+
+| Import path | Contents |
+|---|---|
+| `@trustlayer/sdk` | `TrustLayer`, sessions, shields, collectors, webhooks, crypto helpers |
+| `@trustlayer/sdk/react` | `useVerifyHuman` |
+| `@trustlayer/sdk/middleware` | `requireHuman`, `nextRequireHuman`, `assertRecentAllow`, `SESSION_HEADER` |
+
+Browser IIFE build: `dist/trustlayer.iife.global.js` → global `TrustLayerSDK.TrustLayer.initialize(...)`.
+
+Build: `tsup` → ESM + CJS + TypeScript declarations.
+
+---
+
+## Privacy
+
+- **Consent:** media paths require `consent: true` or a successful `onConsent()`; otherwise the SDK prompts or throws `consent_required`.
+- **Data minimization:** prefer forensic **features** and short sampled windows over continuous raw recording.
+- **Server control:** TrustLayerOS can strip `image_b64` / `audio_b64` after scoring and enforce retention / DSAR.
+- **Keys:** never ship `tl_secret_…` to the browser.
+
+Product line shared with OS: *features and scores by default; raw media only with consent and retention limits.*
+
+---
+
+## Examples
+
+| Path | Focus |
+|---|---|
+| `examples/verify-human.html` | Browser one-shot |
+| `examples/browser-basic.html` | Minimal browser |
+| `examples/four-scene.html` | Multi-scene demo UX |
+| `examples/meeting-sidecar.html` | Call attach pattern |
+| `examples/interview-shield.ts` | Interview monitoring |
+| `examples/fraud-prevention.ts` | Transaction session |
+| `examples/nodejs-server.ts` | Secret key + webhooks |
+| `python/examples/` | Python clients |
 
 ```bash
 npm run build
-# serve this repo (not file://), then open
-# examples/verify-human.html
+# open examples/*.html against a running TrustLayerOS
 ```
 
 ---
 
-## Status
+## Talks to TrustLayerOS
 
-This is **v0.1** — the developer surface is real; the models behind it are not a finished research org.
+This package is a thin, typed client over TrustLayerOS REST:
 
-| Surface | Status |
+| SDK method | HTTP |
 |---|---|
-| `verifyHuman()` / `evaluate()` JSON | Shipping |
-| Interview · deepfake · bot on evaluate | Shipping (heuristics + OSS ONNX on the OS) |
-| React hook · Express / Next middleware · webhooks | Shipping |
-| Fraud / anomaly helpers | Event helpers only — not trained classifiers |
-| npm / PyPI `0.1.x` | Package is publish-ready |
+| `createSession` | `POST /v1/sessions` |
+| `trackEvent` / batch | `POST /v1/events` · `/events/batch` |
+| `issueLivenessChallenge` | `POST /v1/sessions/:id/liveness/challenge` |
+| `getTrustScore` / `getRiskScore` | `GET /v1/trust/:id` · `/risk/:id` |
+| `evaluate` / `verifyHuman` | `POST /v1/evaluate` |
+| keys / webhooks | `/v1/auth/*` · `/v1/webhooks` |
 
-We do not claim unique personhood (1 human ↔ 1 account), production-grade deepfake ROC, or that banks already run this at scale.
+Run the backend locally: see the **TrustLayerOS** README (`docker compose up --build`).  
+GPU webcam demo (OS, not this package): `ml/run_demo.ps1` → http://127.0.0.1:8001/demo
 
 ---
 
-## Development
+## Status & honesty
 
-```bash
-npm install
-npm test
-npm run build
-```
+| | |
+|---|---|
+| **SDK surface** | Real — sessions, events, evaluate, React, middleware |
+| **Scores** | Produced by TrustLayerOS (OSS ONNX media + calibrated tabular / heuristics) |
+| **v0.1** | Pilot integrations — do not claim personhood ROC or bank-scale production from the client alone |
 
-```bash
-cd python
-pip install -e ".[dev]"
-pytest -q
-```
-
-Node 18+ (Web Crypto). TypeScript is first-class. React is an optional peer (`>=18`).
+**Claim:** client SDK for continuous session authenticity.  
+**Do not claim:** unique personhood, KYC replacement, or CAPTCHA replacement.
 
 ---
 
 ## License
 
-[MIT](./LICENSE) © TrustLayer
+MIT — see `LICENSE`.
