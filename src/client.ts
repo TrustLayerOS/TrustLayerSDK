@@ -123,6 +123,10 @@ export class TrustLayer {
         ownerOrg?: string;
         /** Override the preset. Login and payment ask for a passkey by default. */
         passkey?: boolean;
+        /**
+         * Click-the-shape, checked server-side. Defaults on for bot checks that do not open a camera.
+         */
+        botChallenge?: boolean;
       } = {}
   ): Promise<EvaluationResponse> {
     const plan = options.preset ? planForPreset(options.preset) : undefined;
@@ -130,6 +134,7 @@ export class TrustLayer {
     const modules = options.modules ?? modulesForThreats(threats);
     const useMedia = Boolean(options.source) || (plan ? plan.media : needsMedia(threats));
     const wantPasskey = options.passkey ?? plan?.passkey ?? false;
+    const wantBotChallenge = options.botChallenge ?? (!useMedia && threats.includes("bot"));
     const session = await this.createSession({
       type: options.type ?? plan?.type ?? sessionTypeForThreats(threats),
       userId: options.userId,
@@ -155,10 +160,14 @@ export class TrustLayer {
     if (wantPasskey) {
       await session.verifyPasskey();
     }
+    if (wantBotChallenge) {
+      await session.runBotChallenge();
+    }
 
     if (useMedia) {
       return session.verifyHuman({ ...options, modules });
     }
+    session.stopSignalCollection();
     return session.evaluate(modules);
   }
 

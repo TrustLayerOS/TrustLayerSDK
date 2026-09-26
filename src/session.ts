@@ -10,7 +10,9 @@ import {
 import { EventEmitter } from "./events/emitter";
 import { EventType } from "./events/types";
 import { BehaviorCollector } from "./signals/behavior";
-import { collectDeviceSignals } from "./signals/device";
+import { collectAutomationFlags, collectDeviceSignals } from "./signals/device";
+import { installHoneypot } from "./signals/honeypot";
+import { runBotChallenge } from "./modules/botChallenge";
 import { collectNetworkSignals } from "./signals/network";
 import { collectIdentitySignals } from "./signals/identity";
 import { Logger } from "./utils/logger";
@@ -101,6 +103,7 @@ export class TrustSession {
   private readonly apiClient: ApiClient;
   private readonly config: TrustLayerConfig;
   private collectingSignals = false;
+  private honeypotFilled: () => boolean = () => false;
 
   constructor(
     data: CreateSessionResponse,
@@ -132,6 +135,19 @@ export class TrustSession {
 
   async issuePasskeyChallenge() {
     return this.apiClient.issuePasskeyChallenge(this.sessionId);
+  }
+
+  async issueBotChallenge() {
+    return this.apiClient.issueBotChallenge(this.sessionId);
+  }
+
+  /** Click-the-shape. No camera. Skipped outside a browser. */
+  runBotChallenge(): Promise<"passed" | "failed" | "skipped"> {
+    return runBotChallenge(this);
+  }
+
+  async flushEvents(): Promise<void> {
+    await this.emitter.flush();
   }
 
   /**
@@ -188,6 +204,7 @@ export class TrustSession {
 
     if (sigConfig.behavior !== false) {
       this.behaviorCollector.start();
+      this.honeypotFilled = installHoneypot();
     }
 
     void this.sendInitialSignals(sigConfig);
@@ -203,16 +220,30 @@ export class TrustSession {
 
     this.emitter.emit("mouse_activity", {
       mouse_movements: signals.mouseMovements,
-      velocity_variance: signals.mouseMovements > 5 ? 0.35 : 0.02,
+      velocity_variance: signals.velocityVariance,
+      straight_line_ratio: signals.straightLineRatio,
+      curvature: signals.curvature,
+      teleport_gaps: signals.teleportGaps,
+      robotic: signals.straightLineRatio >= 0.9 && signals.mouseMovements > 8,
+      mouse_dx: signals.mouseDx,
+      mouse_dy: signals.mouseDy,
     });
 
-    if (signals.keystrokes > 0) {
+    if (signals.keystrokes > 0 || signals.pasteBursts > 0) {
       this.emitter.emit("typing_pattern", {
         keystrokes: signals.keystrokes,
         avg_typing_speed: signals.avgTypingSpeed,
         cadence_variance: signals.cadenceVariance,
         automated: signals.cadenceVariance < 0.05,
+        paste_burst: signals.pasteBursts > 0,
+        no_corrections: signals.pasteBursts > 0 && signals.corrections === 0,
+        corrections: signals.corrections,
+        key_delays: signals.keyDelays,
       });
+    }
+
+    if (this.honeypotFilled()) {
+      this.emitter.emit("suspicious_activity", { honeypot: true });
     }
 
     if (signals.windowSwitches > 0) {
@@ -382,6 +413,10 @@ export class TrustSession {
           ...deviceSignals,
           is_initial: true,
         });
+        const automation = collectAutomationFlags();
+        if (automation.automation_framework) {
+          this.emitter.emit("suspicious_activity", { ...automation });
+        }
       } catch (err) {
         this.logger.warn("failed to collect device signals", err);
       }

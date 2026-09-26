@@ -1,4 +1,6 @@
-export { collectDeviceSignals, type DeviceSignals } from "./device";
+export { collectDeviceSignals, collectAutomationFlags, automationFlags, type DeviceSignals, type AutomationFlags } from "./device";
+export { installHoneypot } from "./honeypot";
+export { summarizePointer, type PathSummary } from "./behavior";
 export { BehaviorCollector, type BehaviorSignals } from "./behavior";
 export { collectNetworkSignals, type NetworkSignals } from "./network";
 export { collectIdentitySignals, type IdentitySignals } from "./identity";

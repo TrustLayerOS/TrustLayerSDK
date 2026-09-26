@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>TrustLayer bot check</title></head>
+<body>
+  <p>Bot check: behavior and click-the-shape. No camera.</p>
+  <label>API key <input id="key" size="48" value="tl_public_demodemo12DEADBEEF00000001" /></label>
+  <label>API <input id="url" size="32" value="http://127.0.0.1:8080" /></label>
+  <button id="go" type="button">Check</button>
+  <pre id="out"></pre>
+  <script src="../dist/trustlayer.iife.global.js"></script>
+  <script>
+    document.getElementById("go").addEventListener("click", async function () {
+      const client = new TrustLayerSDK.TrustLayer({
+        apiKey: document.getElementById("key").value,
+        apiUrl: document.getElementById("url").value,
+      });
+      const result = await client.check({ threats: ["bot"], consent: true });
+      document.getElementById("out").textContent = JSON.stringify(result, null, 2);
+    });
+  </script>
+</body>
+</html>

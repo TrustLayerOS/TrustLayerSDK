@@ -190,7 +190,8 @@ class TrustLayer:
         One call for signup, login, call, payment, review, or raw threats.
 
         ``preset`` is ``signup``, ``login``, ``call``, ``payment``, or ``review``.
-        ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``.
+        ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``, ``["bot"]``.
+        Bot-only checks do not open a camera. The click-the-shape challenge is the JS client.
         """
         plan = _PRESETS.get(preset or "")
         if preset and plan is None:

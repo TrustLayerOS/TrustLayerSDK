@@ -101,6 +101,62 @@ function getCanvasFingerprint(): Promise<string> {
   });
 }
 
+export interface AutomationFlags {
+  webdriver: boolean;
+  headless_ua: boolean;
+  automation_global: boolean;
+  languages_empty: boolean;
+  webgl_swiftshader: boolean;
+  automation_framework: boolean;
+}
+
+export interface AutomationSnapshot {
+  webdriver?: boolean;
+  userAgent?: string;
+  languages?: readonly string[];
+  webglRenderer?: string;
+  globals?: Record<string, unknown>;
+}
+
+/** Environment booleans. A real browser call builds the snapshot; tests pass one in. */
+export function automationFlags(env: AutomationSnapshot): AutomationFlags {
+  const ua = env.userAgent ?? "";
+  const globals = env.globals ?? {};
+  const flags = {
+    webdriver: env.webdriver === true,
+    headless_ua: /HeadlessChrome|PhantomJS/i.test(ua),
+    automation_global: Boolean(
+      globals["callPhantom"] ||
+        globals["_phantom"] ||
+        globals["domAutomation"] ||
+        globals["__playwright"] ||
+        globals["__pw_manual"] ||
+        globals["__nightmare"]
+    ),
+    languages_empty: !env.languages || env.languages.length === 0,
+    webgl_swiftshader: /swiftshader/i.test(env.webglRenderer ?? ""),
+  };
+  return {
+    ...flags,
+    automation_framework:
+      flags.webdriver || flags.headless_ua || flags.automation_global || flags.languages_empty || flags.webgl_swiftshader,
+  };
+}
+
+export function collectAutomationFlags(): AutomationFlags {
+  if (typeof navigator === "undefined") {
+    return automationFlags({});
+  }
+  const w = typeof window === "undefined" ? {} : (window as unknown as Record<string, unknown>);
+  return automationFlags({
+    webdriver: navigator.webdriver === true,
+    userAgent: navigator.userAgent,
+    languages: navigator.languages,
+    webglRenderer: getWebGLRenderer(),
+    globals: w,
+  });
+}
+
 function getWebGLRenderer(): string | undefined {
   try {
     const canvas = document.createElement("canvas");

@@ -1,3 +1,18 @@
+export interface PointerSample {
+  x: number;
+  y: number;
+  t: number;
+}
+
+export interface PathSummary {
+  straightLineRatio: number;
+  curvature: number;
+  teleportGaps: number;
+  velocityVariance: number;
+  dx: number[];
+  dy: number[];
+}
+
 export interface BehaviorSignals {
   mouseMovements: number;
   keystrokes: number;
@@ -9,6 +24,68 @@ export interface BehaviorSignals {
   sessionDuration: number;  // ms since start()
   navigationEvents: number;
   cadenceVariance: number;  // 0 = robotic, 1 = very human
+  straightLineRatio: number;
+  curvature: number;
+  teleportGaps: number;
+  velocityVariance: number;
+  mouseDx: number[];
+  mouseDy: number[];
+  keyDelays: number[];
+  pasteBursts: number;
+  corrections: number;
+}
+
+const SEQ_CAP = 32;
+
+/** Path features from a capped pointer trail. Used by the collector and tests. */
+export function summarizePointer(points: PointerSample[]): PathSummary {
+  if (points.length < 2) {
+    return { straightLineRatio: 0, curvature: 1, teleportGaps: 0, velocityVariance: 0.5, dx: [], dy: [] };
+  }
+  const dx: number[] = [];
+  const dy: number[] = [];
+  const speeds: number[] = [];
+  let path = 0;
+  let teleports = 0;
+  let turn = 0;
+  let turns = 0;
+  let prevAngle: number | null = null;
+  for (let i = 1; i < points.length; i++) {
+    const ddx = points[i].x - points[i - 1].x;
+    const ddy = points[i].y - points[i - 1].y;
+    const dt = Math.max(1, points[i].t - points[i - 1].t);
+    const dist = Math.hypot(ddx, ddy);
+    path += dist;
+    if (dist > 180 && dt < 20) teleports++;
+    speeds.push(dist / dt);
+    if (dx.length < SEQ_CAP) {
+      dx.push(Math.round(ddx * 10) / 10);
+      dy.push(Math.round(ddy * 10) / 10);
+    }
+    if (dist > 2) {
+      const angle = Math.atan2(ddy, ddx);
+      if (prevAngle !== null) {
+        let delta = Math.abs(angle - prevAngle);
+        if (delta > Math.PI) delta = 2 * Math.PI - delta;
+        turn += delta;
+        turns++;
+      }
+      prevAngle = angle;
+    }
+  }
+  const chord = Math.hypot(points[points.length - 1].x - points[0].x, points[points.length - 1].y - points[0].y);
+  const straight = path > 0 ? Math.min(1, chord / path) : 0;
+  const meanSpeed = speeds.reduce((a, b) => a + b, 0) / speeds.length;
+  const varSpeed = speeds.reduce((sum, s) => sum + (s - meanSpeed) ** 2, 0) / speeds.length;
+  const cv = meanSpeed > 0 ? Math.sqrt(varSpeed) / meanSpeed : 0;
+  return {
+    straightLineRatio: Math.round(straight * 1000) / 1000,
+    curvature: turns > 0 ? Math.round((turn / turns) * 1000) / 1000 : 1,
+    teleportGaps: teleports,
+    velocityVariance: Math.min(1, Math.round(cv * 1000) / 1000),
+    dx,
+    dy,
+  };
 }
 
 /**
@@ -26,25 +103,39 @@ export class BehaviorCollector {
   private lastActivityTime: number = 0;
   private totalIdleTime = 0;
   private keyTimings: number[] = [];
+  private lastKeyTime = 0;
+  private points: PointerSample[] = [];
+  private pasteBursts = 0;
+  private corrections = 0;
   private running = false;
 
   // Event listener references for cleanup
-  private readonly onMouseMove = () => {
+  private readonly onMouseMove = (ev: MouseEvent) => {
     this.mouseMovements++;
+    if (this.points.length < 64) {
+      this.points.push({ x: ev.clientX, y: ev.clientY, t: performance.now() });
+    }
     this.updateActivity();
   };
 
-  private readonly onKeyDown = () => {
+  private readonly onKeyDown = (ev: KeyboardEvent) => {
     const now = performance.now();
-    if (this.keyTimings.length > 0) {
-      const delta = now - this.keyTimings[this.keyTimings.length - 1];
-      if (delta > 0 && delta < 5000) {
-        this.keyTimings.push(delta);
+    if (this.lastKeyTime > 0) {
+      const delta = now - this.lastKeyTime;
+      if (delta > 0 && delta < 5000 && this.keyTimings.length < SEQ_CAP) {
+        this.keyTimings.push(Math.round(delta));
       }
-    } else {
-      this.keyTimings.push(now);
+    }
+    this.lastKeyTime = now;
+    if (ev.key === "Backspace" || ev.key === "Delete") {
+      this.corrections++;
     }
     this.keystrokes++;
+    this.updateActivity();
+  };
+
+  private readonly onPaste = () => {
+    this.pasteBursts++;
     this.updateActivity();
   };
 
@@ -81,6 +172,7 @@ export class BehaviorCollector {
 
     window.addEventListener("mousemove", this.onMouseMove, { passive: true });
     window.addEventListener("keydown", this.onKeyDown, { passive: true });
+    window.addEventListener("paste", this.onPaste);
     window.addEventListener("scroll", this.onScroll, { passive: true });
     window.addEventListener("click", this.onClick, { passive: true });
     document.addEventListener("visibilitychange", this.onVisibilityChange);
@@ -95,6 +187,7 @@ export class BehaviorCollector {
 
     window.removeEventListener("mousemove", this.onMouseMove);
     window.removeEventListener("keydown", this.onKeyDown);
+    window.removeEventListener("paste", this.onPaste);
     window.removeEventListener("scroll", this.onScroll);
     window.removeEventListener("click", this.onClick);
     document.removeEventListener("visibilitychange", this.onVisibilityChange);
@@ -112,6 +205,7 @@ export class BehaviorCollector {
       sessionDuration > 0
         ? (this.keystrokes / sessionDuration) * 1000
         : 0;
+    const path = summarizePointer(this.points);
 
     return {
       mouseMovements: this.mouseMovements,
@@ -124,6 +218,15 @@ export class BehaviorCollector {
       sessionDuration: Math.round(sessionDuration),
       navigationEvents: this.navigationEvents,
       cadenceVariance: this.computeCadenceVariance(),
+      straightLineRatio: path.straightLineRatio,
+      curvature: path.curvature,
+      teleportGaps: path.teleportGaps,
+      velocityVariance: this.points.length >= 4 ? path.velocityVariance : this.mouseMovements > 5 ? 0.35 : 0.02,
+      mouseDx: path.dx,
+      mouseDy: path.dy,
+      keyDelays: this.keyTimings.slice(0, SEQ_CAP),
+      pasteBursts: this.pasteBursts,
+      corrections: this.corrections,
     };
   }
 
@@ -136,6 +239,10 @@ export class BehaviorCollector {
     this.navigationEvents = 0;
     this.totalIdleTime = 0;
     this.keyTimings = [];
+    this.lastKeyTime = 0;
+    this.points = [];
+    this.pasteBursts = 0;
+    this.corrections = 0;
     this.startTime = performance.now();
     this.lastActivityTime = this.startTime;
   }

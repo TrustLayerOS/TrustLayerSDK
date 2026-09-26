@@ -27,6 +27,7 @@ export { InterviewShield } from "./modules/interview";
 export { DeepfakeShield }  from "./modules/deepfake";
 export { AnomalyShield }   from "./modules/anomaly";
 export { runLivenessChallenge } from "./modules/liveness";
+export { runBotChallenge } from "./modules/botChallenge";
 
 export type { FraudResult, FraudEvaluationContext }        from "./modules/fraud";
 export type { BotAnalysisResult }                          from "./modules/bot";

@@ -21,6 +21,8 @@ export type EventType =
   | "voice_clone_risk"
   | "passkey_verified"
   | "face_reference"
+  | "bot_challenge_passed"
+  | "bot_challenge_failed"
   | "custom";
 
 export interface TrustEvent {

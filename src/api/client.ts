@@ -62,6 +62,16 @@ export class ApiClient {
     return this.request("POST", `/v1/sessions/${sessionId}/passkey/challenge`);
   }
 
+  async issueBotChallenge(sessionId: string): Promise<{
+    session_id: string;
+    challenge_id: string;
+    shape: string;
+    prompt: string;
+    ttl_seconds: number;
+  }> {
+    return this.request("POST", `/v1/sessions/${sessionId}/bot/challenge`);
+  }
+
   async issueLivenessChallenge(
     sessionId: string,
     count = 3
