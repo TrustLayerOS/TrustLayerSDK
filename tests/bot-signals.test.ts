@@ -1,6 +1,6 @@
 import { automationFlags } from "../src/signals/device";
 import { summarizePointer } from "../src/signals/behavior";
-import { frameDigest, looksVirtual, screenEdgeEnergy } from "../src/signals/media";
+import { flowEnergy, frameDigest, looksVirtual, mouthBandEnergy, screenEdgeEnergy, signalEnergy } from "../src/signals/media";
 import { SpamShield } from "../src/modules/spam";
 import { AgentShield } from "../src/modules/agent";
 
@@ -95,5 +95,16 @@ describe("screen injection cues", () => {
     }
     expect(screenEdgeEnergy(data, width, height)).toBeGreaterThanOrEqual(0.65);
     expect(screenEdgeEnergy(new Uint8Array(width * height * 4), width, height)).toBe(0);
+  });
+
+  it("reads a still window as zero flow and a changed window as motion", () => {
+    const still = { width: 8, height: 8, data: new Uint8ClampedArray(8 * 8 * 4).fill(40), timestamp: 1 };
+    expect(flowEnergy(still, still)).toBe(0);
+    const moved = { ...still, data: new Uint8ClampedArray(still.data) };
+    moved.data[0] = 255;
+    expect(flowEnergy(still, moved)).toBeGreaterThan(0);
+    expect(mouthBandEnergy(still, moved)).toBeGreaterThanOrEqual(0);
+    expect(signalEnergy([0, 0, 0])).toBe(0);
+    expect(signalEnergy([1, -1])).toBeGreaterThan(0.5);
   });
 });

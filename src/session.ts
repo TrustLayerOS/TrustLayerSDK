@@ -20,8 +20,10 @@ import {
   createMediaSampler,
   createMediaSamplerFrom,
   extractFrameFeatures,
+  flowEnergy,
   frameDigest,
   isBrowser,
+  mouthBandEnergy,
   screenEdgeEnergy,
   type FrameSample,
   type MediaSource,
@@ -352,7 +354,7 @@ export class TrustSession {
         await sampler.start({ video, audio });
         if (video) {
           let prev: FrameSample | null = null;
-          for (let i = 0; i < 3; i++) {
+          for (let i = 0; i < 8; i++) {
             const frame = await sampler.sampleFrame();
             if (frame) {
               const features = extractFrameFeatures(frame, prev);
@@ -368,6 +370,8 @@ export class TrustSession {
                 frame_hash: hash,
                 repeated_frame: hash !== "" && hash === prevHash,
                 screen_edge: screenEdgeEnergy(frame.data, frame.width, frame.height),
+                flow_energy: prev ? flowEnergy(prev, frame) : undefined,
+                mouth_energy: prev ? mouthBandEnergy(prev, frame) : undefined,
               });
               prev = frame;
               capturedMedia = true;
@@ -378,7 +382,12 @@ export class TrustSession {
         if (audio) {
           const feats = await sampler.sampleAudio(1200);
           if (feats) {
-            const voice = { ml_features: feats, consent: true, sample_rate: options.sampleRate ?? 16000 };
+            const voice = {
+              ml_features: feats,
+              consent: true,
+              sample_rate: options.sampleRate ?? 16000,
+              audio_energy: sampler.lastAudioEnergy(),
+            };
             await this.trackEvent("voice_liveness", voice);
             await this.trackEvent("voice_clone_risk", voice);
             capturedMedia = true;

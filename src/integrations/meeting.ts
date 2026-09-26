@@ -3,8 +3,10 @@ import type { TrustSession } from "../session";
 import {
   createMediaSamplerFrom,
   extractFrameFeatures,
+  flowEnergy,
   frameDigest,
   isBrowser,
+  mouthBandEnergy,
   screenEdgeEnergy,
   type FrameSample,
   type MediaSource,
@@ -143,6 +145,8 @@ export async function attachToCall(
             frame_hash: hash,
             repeated_frame: hash !== "" && hash === prevHash,
             screen_edge: screenEdgeEnergy(frame.data, frame.width, frame.height),
+            flow_energy: prev ? flowEnergy(prev, frame) : undefined,
+            mouth_energy: prev ? mouthBandEnergy(prev, frame) : undefined,
             virtual_camera: sampler.virtualCamera(),
           });
           prev = frame;
@@ -156,11 +160,13 @@ export async function attachToCall(
             participant_id: options.participantId,
             platform: options.platform ?? "generic",
             consent: true,
+            audio_energy: sampler.lastAudioEnergy(),
           });
           await options.session.trackEvent("voice_clone_risk", {
             ml_features: feats,
             participant_id: options.participantId,
             consent: true,
+            audio_energy: sampler.lastAudioEnergy(),
           });
         }
       }

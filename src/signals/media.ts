@@ -32,6 +32,8 @@ export interface MediaSampler {
   sampleFrame(): Promise<FrameSample | null>;
   sampleJpeg(quality?: number): string | null;
   sampleAudio(durationMs?: number): Promise<number[] | null>;
+  /** RMS of the last sampleAudio window. 0 until a sample exists. */
+  lastAudioEnergy(): number;
   /** True when the video track label looks like a virtual camera. */
   virtualCamera(): boolean;
   stop(): void;
@@ -89,6 +91,7 @@ export async function createMediaSamplerFrom(
   let video: HTMLVideoElement | HTMLAudioElement | null = null;
   let canvas: HTMLCanvasElement | null = null;
   let ownsStream = false;
+  let audioEnergy = 0;
   let createdVideo = false;
 
   return {
@@ -187,8 +190,13 @@ export async function createMediaSamplerFrom(
       const time = new Float32Array(analyser.fftSize);
       analyser.getFloatTimeDomainData(time);
       const features = extractAudioFeatures(time, spec);
+      audioEnergy = signalEnergy(time);
       await ctx.close();
       return features;
+    },
+
+    lastAudioEnergy() {
+      return audioEnergy;
     },
 
     stop() {
@@ -206,6 +214,53 @@ export async function createMediaSamplerFrom(
 }
 
 /** Compact digest of a frame. Two identical samples share a digest. */
+/** Mean absolute pixel change, 0–1. A frozen photo stays near 0. */
+export function flowEnergy(prev: FrameSample, curr: FrameSample): number {
+  if (prev.width !== curr.width || prev.height !== curr.height || curr.width === 0) return 0;
+  const pixels = curr.width * curr.height;
+  const step = Math.max(1, Math.floor(pixels / 2000));
+  let total = 0;
+  let samples = 0;
+  for (let p = 0; p < pixels; p += step) {
+    const i = p * 4;
+    const a = ((prev.data[i] ?? 0) + (prev.data[i + 1] ?? 0) + (prev.data[i + 2] ?? 0)) / 3;
+    const b = ((curr.data[i] ?? 0) + (curr.data[i + 1] ?? 0) + (curr.data[i + 2] ?? 0)) / 3;
+    total += Math.abs(a - b);
+    samples++;
+  }
+  return Math.min(1, Math.round((total / Math.max(1, samples) / 255) * 1000) / 1000);
+}
+
+/** Change in the lower center band. This is not a mouth-landmark model. */
+export function mouthBandEnergy(prev: FrameSample, curr: FrameSample): number {
+  if (prev.width !== curr.width || prev.height !== curr.height || curr.height < 4) return 0;
+  const y0 = Math.floor(curr.height * 0.62);
+  const x0 = Math.floor(curr.width * 0.25);
+  const x1 = Math.floor(curr.width * 0.75);
+  let total = 0;
+  let samples = 0;
+  for (let y = y0; y < curr.height; y += 2) {
+    for (let x = x0; x < x1; x += 2) {
+      const i = (y * curr.width + x) * 4;
+      const a = ((prev.data[i] ?? 0) + (prev.data[i + 1] ?? 0) + (prev.data[i + 2] ?? 0)) / 3;
+      const b = ((curr.data[i] ?? 0) + (curr.data[i + 1] ?? 0) + (curr.data[i + 2] ?? 0)) / 3;
+      total += Math.abs(a - b);
+      samples++;
+    }
+  }
+  return Math.min(1, Math.round((total / Math.max(1, samples) / 255) * 1000) / 1000);
+}
+
+export function signalEnergy(time: ArrayLike<number>): number {
+  if (time.length === 0) return 0;
+  let sum = 0;
+  for (let i = 0; i < time.length; i++) {
+    const v = time[i] ?? 0;
+    sum += v * v;
+  }
+  return Math.min(1, Math.round(Math.sqrt(sum / time.length) * 1000) / 1000);
+}
+
 export function frameDigest(data: ArrayLike<number>, width: number, height: number): string {
   let hash = 5381;
   const pixels = width * height;
