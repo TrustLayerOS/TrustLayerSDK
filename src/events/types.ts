@@ -19,6 +19,7 @@ export type EventType =
   | "face_frame"
   | "voice_liveness"
   | "voice_clone_risk"
+  | "passkey_verified"
   | "custom";
 
 export interface TrustEvent {

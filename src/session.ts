@@ -128,6 +128,56 @@ export class TrustSession {
     return this.apiClient.issueLivenessChallenge(this.sessionId, count);
   }
 
+  async issuePasskeyChallenge() {
+    return this.apiClient.issuePasskeyChallenge(this.sessionId);
+  }
+
+  /**
+   * WebAuthn presence signal. Credits the session only after the server
+   * consumes a one-time challenge. Cancelled or unsupported authenticators
+   * return a status and do not throw.
+   */
+  async verifyPasskey(): Promise<"verified" | "unavailable" | "cancelled"> {
+    if (!isBrowser() || typeof PublicKeyCredential === "undefined") {
+      return "unavailable";
+    }
+    let issued: { challenge_id: string; challenge: string };
+    try {
+      issued = await this.apiClient.issuePasskeyChallenge(this.sessionId);
+    } catch {
+      return "unavailable";
+    }
+    const challenge = copyBuffer(hexToBytes(issued.challenge));
+    const userId = copyBuffer(crypto.getRandomValues(new Uint8Array(16)));
+    try {
+      const cred = await navigator.credentials.create({
+        publicKey: {
+          challenge,
+          rp: { name: "TrustLayer", id: location.hostname },
+          user: { id: userId, name: this.sessionId, displayName: "TrustLayer session" },
+          pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -257 }],
+          timeout: 60_000,
+          authenticatorSelection: { userVerification: "preferred", residentKey: "discouraged" },
+          attestation: "none",
+        },
+      });
+      if (!cred || !(cred instanceof PublicKeyCredential)) return "cancelled";
+      const raw = new Uint8Array(cred.rawId);
+      let binary = "";
+      raw.forEach((b) => {
+        binary += String.fromCharCode(b);
+      });
+      await this.trackEvent("passkey_verified", {
+        challenge_id: issued.challenge_id,
+        credential_id: btoa(binary).slice(0, 88),
+      });
+      await this.emitter.flush();
+      return "verified";
+    } catch {
+      return "cancelled";
+    }
+  }
+
   startSignalCollection(): void {
     if (this.collectingSignals) return;
     this.collectingSignals = true;
@@ -347,4 +397,19 @@ export class TrustSession {
       }
     }
   }
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  const clean = hex.trim();
+  const out = new Uint8Array(Math.floor(clean.length / 2));
+  for (let i = 0; i < out.length; i++) {
+    out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function copyBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(copy).set(bytes);
+  return copy;
 }

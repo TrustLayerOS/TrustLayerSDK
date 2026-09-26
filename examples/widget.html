@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>TrustLayer widget</title></head>
+<body>
+  <p>Script-tag widget. Change the preset in the script below.</p>
+  <div id="check"></div>
+  <pre id="out"></pre>
+  <script src="../dist/trustlayer.iife.global.js"></script>
+  <script>
+    var handle = TrustLayerSDK.mountHumanCheck({
+      apiKey: "tl_public_demodemo12DEADBEEF00000001",
+      apiUrl: "http://127.0.0.1:8080",
+      preset: "login",
+      target: "#check",
+      consent: true,
+      onResult: function (result) {
+        document.getElementById("out").textContent =
+          handle.sessionId() + "\n" + JSON.stringify(result, null, 2);
+      }
+    });
+  </script>
+</body>
+</html>

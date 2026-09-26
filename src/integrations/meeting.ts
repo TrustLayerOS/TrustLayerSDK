@@ -20,8 +20,13 @@ export type CallPlatform =
   | "twilio";
 
 /**
- * Meet / Zoom / Teams do not expose remote tiles to third-party JS.
- * Attach the MediaStream you already have from a Video SDK or WebRTC app.
+ * Attach a MediaStream your app is allowed to hold.
+ *
+ * Works when you join with the user's permission:
+ * Zoom Video SDK, Daily, LiveKit, Twilio Video, generic WebRTC.
+ *
+ * meet.google.com and the Zoom desktop app do not expose remote tiles.
+ * Use examples/meeting-sidecar.html, or a bot that captures an authorized stream.
  */
 export interface AttachCallOptions {
   session: TrustSession;

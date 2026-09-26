@@ -21,6 +21,11 @@
       "import": "./dist/middleware.mjs",
       "require": "./dist/middleware.js",
       "types": "./dist/middleware.d.ts"
+    },
+    "./mobile": {
+      "import": "./dist/mobile.mjs",
+      "require": "./dist/mobile.js",
+      "types": "./dist/mobile.d.ts"
     }
   },
   "files": ["dist", "README.md", "LICENSE"],

@@ -12,6 +12,7 @@ import {
   sessionTypeForThreats,
   type Threat,
 } from "./check";
+import { planForPreset, type HumanPreset } from "./presets";
 import { FraudShield } from "./modules/fraud";
 import { BotShield } from "./modules/bot";
 import { InterviewShield } from "./modules/interview";
@@ -116,19 +117,25 @@ export class TrustLayer {
     options: VerifyHumanOptions &
       Partial<CreateSessionOptions> & {
         threats?: Threat[];
+        preset?: HumanPreset;
         text?: string;
         agentId?: string;
         ownerOrg?: string;
+        /** Override the preset. Login and payment ask for a passkey by default. */
+        passkey?: boolean;
       } = {}
   ): Promise<EvaluationResponse> {
-    const threats = options.threats ?? ["human"];
+    const plan = options.preset ? planForPreset(options.preset) : undefined;
+    const threats = options.threats ?? plan?.threats ?? ["human"];
     const modules = options.modules ?? modulesForThreats(threats);
+    const useMedia = Boolean(options.source) || (plan ? plan.media : needsMedia(threats));
+    const wantPasskey = options.passkey ?? plan?.passkey ?? false;
     const session = await this.createSession({
-      type: options.type ?? sessionTypeForThreats(threats),
+      type: options.type ?? plan?.type ?? sessionTypeForThreats(threats),
       userId: options.userId,
       modules,
       riskThreshold: options.riskThreshold,
-      metadata: options.metadata,
+      metadata: { ...options.metadata, ...(plan ? { preset: plan.preset } : {}) },
     });
 
     if (options.text) {
@@ -144,8 +151,12 @@ export class TrustLayer {
       });
     }
 
-    if (needsMedia(threats) || options.source) {
-      session.startSignalCollection();
+    session.startSignalCollection();
+    if (wantPasskey) {
+      await session.verifyPasskey();
+    }
+
+    if (useMedia) {
       return session.verifyHuman({ ...options, modules });
     }
     return session.evaluate(modules);

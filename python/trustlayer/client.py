@@ -6,6 +6,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
+from .exceptions import TrustLayerError
 from .http import HttpClient, DEFAULT_API_URL, DEFAULT_TIMEOUT
 from .models import (
     CreateSessionRequest,
@@ -173,6 +174,7 @@ class TrustLayer:
         self,
         *,
         threats: Optional[list[str]] = None,
+        preset: Optional[str] = None,
         type: Optional[str] = None,  # noqa: A002
         user_id: Optional[str] = None,
         consent: bool = False,
@@ -185,14 +187,17 @@ class TrustLayer:
         modules: Optional[list[str]] = None,
     ) -> EvaluationResponse:
         """
-        One call for voice / video / bot / spam / agent / fraud.
+        One call for signup, login, call, payment, review, or raw threats.
 
-        ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``,
-        ``["agent"]``, ``["fraud"]``, ``["ai"]``.
+        ``preset`` is ``signup``, ``login``, ``call``, ``payment``, or ``review``.
+        ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``.
         """
-        wanted = threats or ["human"]
+        plan = _PRESETS.get(preset or "")
+        if preset and plan is None:
+            raise TrustLayerError(f"unknown preset: {preset}")
+        wanted = threats or (plan["threats"] if plan else ["human"])
         mods = modules or _modules_for_threats(wanted)
-        session_type = type or _session_type_for_threats(wanted)
+        session_type = type or (plan["type"] if plan else _session_type_for_threats(wanted))
         session = self.create_session(
             type=session_type,
             user_id=user_id,
@@ -202,7 +207,10 @@ class TrustLayer:
             session.track_event("custom", {"signal_type": "message", "message_content": text})
         if agent_id:
             session.track_event("custom", {"agent_id": agent_id, "owner_org": owner_org})
-        needs_media = any(t in wanted for t in ("human", "voice", "video", "deepfake"))
+        if plan is not None and not threats and not image_b64 and not audio_b64 and not audio_pcm:
+            needs_media = bool(plan["media"])
+        else:
+            needs_media = any(t in wanted for t in ("human", "voice", "video", "deepfake"))
         if needs_media or image_b64 or audio_b64 or audio_pcm:
             return session.verify_human(
                 consent=consent,
@@ -379,6 +387,15 @@ class TrustLayer:
 
     def __repr__(self) -> str:
         return f"TrustLayer(api_url={self._http._base_url!r})"
+
+
+_PRESETS: dict[str, dict[str, Any]] = {
+    "signup": {"threats": ["bot", "fraud"], "type": "user_verification", "media": False},
+    "login": {"threats": ["bot", "fraud"], "type": "authentication", "media": False},
+    "call": {"threats": ["human"], "type": "interview", "media": True},
+    "payment": {"threats": ["fraud", "bot", "anomaly"], "type": "transaction", "media": False},
+    "review": {"threats": ["spam", "bot"], "type": "user_verification", "media": False},
+}
 
 
 def _modules_for_threats(threats: list[str]) -> list[str]:

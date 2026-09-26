@@ -6,6 +6,7 @@ export default defineConfig([
       index: "src/index.ts",
       react: "src/react/index.ts",
       middleware: "src/middleware/index.ts",
+      mobile: "src/mobile/index.ts",
     },
     format: ["cjs", "esm"],
     dts: true,

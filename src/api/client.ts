@@ -53,6 +53,15 @@ export class ApiClient {
     return this.request("POST", "/v1/events/batch", { events }, { biometric: true });
   }
 
+  async issuePasskeyChallenge(sessionId: string): Promise<{
+    session_id: string;
+    challenge_id: string;
+    challenge: string;
+    ttl_seconds: number;
+  }> {
+    return this.request("POST", `/v1/sessions/${sessionId}/passkey/challenge`);
+  }
+
   async issueLivenessChallenge(
     sessionId: string,
     count = 3

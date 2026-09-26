@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8" /><title>TrustLayer signup check</title></head>
+<body>
+  <p>Signup preset: bot + fraud, no camera.</p>
+  <label>API key <input id="key" size="48" value="tl_public_demodemo12DEADBEEF00000001" /></label>
+  <label>API <input id="url" size="32" value="http://127.0.0.1:8080" /></label>
+  <div id="panel"></div>
+  <pre id="out"></pre>
+  <script src="../dist/trustlayer.iife.global.js"></script>
+  <script>
+    document.getElementById("key").addEventListener("change", mount);
+    mount();
+    function mount() {
+      document.getElementById("panel").replaceChildren();
+      TrustLayerSDK.mountHumanCheck({
+        apiKey: document.getElementById("key").value,
+        apiUrl: document.getElementById("url").value,
+        preset: "signup",
+        target: "#panel",
+        consent: true,
+        onResult: function (r) { document.getElementById("out").textContent = JSON.stringify(r, null, 2); }
+      });
+    }
+  </script>
+</body>
+</html>

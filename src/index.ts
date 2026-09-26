@@ -6,6 +6,10 @@ export { TrustSession, SessionManager } from "./session";
 export type { CreateSessionOptions, VerifyHumanOptions } from "./session";
 export { modulesForThreats, sessionTypeForThreats } from "./check";
 export type { Threat } from "./check";
+export { HUMAN_PRESETS, planForPreset } from "./presets";
+export type { HumanPreset, PresetPlan } from "./presets";
+export { mountHumanCheck } from "./widget";
+export type { MountHumanCheckOptions, HumanCheckHandle } from "./widget";
 export { assertMediaConsent } from "./privacy";
 
 // ─── Config ───────────────────────────────────────────────────────────────────

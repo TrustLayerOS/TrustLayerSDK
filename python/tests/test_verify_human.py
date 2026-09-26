@@ -32,6 +32,16 @@ def test_threat_presets():
     assert _session_type_for_threats(["fraud"]) == "transaction"
 
 
+def test_product_presets():
+    from trustlayer.client import _PRESETS
+
+    assert _PRESETS["signup"]["media"] is False
+    assert _PRESETS["login"]["type"] == "authentication"
+    assert _PRESETS["call"]["threats"] == ["human"]
+    assert _PRESETS["payment"]["type"] == "transaction"
+    assert "spam" in _PRESETS["review"]["threats"]
+
+
 def test_verify_voice_requires_consent():
     s = _session()
     try:
