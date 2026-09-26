@@ -1,4 +1,4 @@
-from trustlayer.client import _modules_for_threats, _session_type_for_threats
+from trustlayer.presets import PRESETS, modules_for_threats, session_type_for_threats
 from trustlayer.exceptions import TrustLayerError
 from trustlayer.models import CreateSessionResponse
 from trustlayer.session import TrustSession
@@ -26,20 +26,18 @@ def test_verify_human_requires_consent_for_media():
 
 
 def test_threat_presets():
-    assert _modules_for_threats(["human"]) == ["interview", "deepfake", "bot"]
-    assert _modules_for_threats(["spam"]) == ["spam"]
-    assert _modules_for_threats(["agent"]) == ["agent", "bot"]
-    assert _session_type_for_threats(["fraud"]) == "transaction"
+    assert modules_for_threats(["human"]) == ["interview", "deepfake", "bot"]
+    assert modules_for_threats(["spam"]) == ["spam"]
+    assert modules_for_threats(["agent"]) == ["agent", "bot"]
+    assert session_type_for_threats(["fraud"]) == "transaction"
 
 
 def test_product_presets():
-    from trustlayer.client import _PRESETS
-
-    assert _PRESETS["signup"]["media"] is False
-    assert _PRESETS["login"]["type"] == "authentication"
-    assert _PRESETS["call"]["threats"] == ["human"]
-    assert _PRESETS["payment"]["type"] == "transaction"
-    assert "spam" in _PRESETS["review"]["threats"]
+    assert PRESETS["signup"]["media"] is False
+    assert PRESETS["login"]["type"] == "authentication"
+    assert PRESETS["call"]["threats"] == ["human"]
+    assert PRESETS["payment"]["type"] == "transaction"
+    assert "spam" in PRESETS["review"]["threats"]
 
 
 def test_verify_voice_requires_consent():

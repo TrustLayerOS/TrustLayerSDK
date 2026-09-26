@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from .exceptions import TrustLayerError
 from .http import HttpClient, DEFAULT_API_URL, DEFAULT_TIMEOUT
 from .models import (
     CreateSessionRequest,
@@ -26,6 +25,7 @@ from .modules.anomaly import AnomalyShield
 from .modules.deepfake import DeepfakeShield
 from .modules.spam import SpamShield
 from .modules.agent import AgentShield
+from .presets import modules_for_threats, plan_for_preset, session_type_for_threats
 
 
 class TrustLayer:
@@ -195,12 +195,10 @@ class TrustLayer:
         ``threats`` examples: ``["human"]``, ``["voice"]``, ``["spam"]``, ``["bot"]``.
         Bot-only checks do not open a camera. The click-the-shape challenge is the JS client.
         """
-        plan = _PRESETS.get(preset or "")
-        if preset and plan is None:
-            raise TrustLayerError(f"unknown preset: {preset}")
+        plan = plan_for_preset(preset)
         wanted = threats or (plan["threats"] if plan else ["human"])
-        mods = modules or _modules_for_threats(wanted)
-        session_type = type or (plan["type"] if plan else _session_type_for_threats(wanted))
+        mods = modules or modules_for_threats(wanted)
+        session_type = type or (plan["type"] if plan else session_type_for_threats(wanted))
         session = self.create_session(
             type=session_type,
             user_id=user_id,
@@ -398,52 +396,3 @@ class TrustLayer:
 
     def __repr__(self) -> str:
         return f"TrustLayer(api_url={self._http._base_url!r})"
-
-
-_PRESETS: dict[str, dict[str, Any]] = {
-    "signup": {"threats": ["bot", "fraud"], "type": "user_verification", "media": False},
-    "login": {"threats": ["bot", "fraud"], "type": "authentication", "media": False},
-    "call": {"threats": ["human"], "type": "interview", "media": True},
-    "payment": {"threats": ["fraud", "bot", "anomaly"], "type": "transaction", "media": False},
-    "review": {"threats": ["spam", "bot"], "type": "user_verification", "media": False},
-}
-
-
-def _modules_for_threats(threats: list[str]) -> list[str]:
-    out: list[str] = []
-    seen: set[str] = set()
-
-    def add(*names: str) -> None:
-        for n in names:
-            if n not in seen:
-                seen.add(n)
-                out.append(n)
-
-    for t in threats or ["human"]:
-        if t == "human":
-            add("interview", "deepfake", "bot")
-        elif t in ("voice", "video", "deepfake"):
-            add("deepfake", "bot")
-        elif t == "bot":
-            add("bot")
-        elif t == "spam":
-            add("spam")
-        elif t == "agent":
-            add("agent", "bot")
-        elif t == "fraud":
-            add("fraud", "anomaly")
-        elif t == "anomaly":
-            add("anomaly")
-        elif t == "ai":
-            add("interview", "spam", "bot")
-    return out or ["interview", "deepfake", "bot"]
-
-
-def _session_type_for_threats(threats: list[str]) -> str:
-    if "agent" in threats:
-        return "agent"
-    if "fraud" in threats:
-        return "transaction"
-    if "spam" in threats and not any(t in threats for t in ("human", "deepfake", "voice", "video")):
-        return "user_verification"
-    return "interview"

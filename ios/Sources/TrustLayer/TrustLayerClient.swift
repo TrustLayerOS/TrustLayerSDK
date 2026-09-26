@@ -58,9 +58,10 @@ public final class TrustLayerClient {
     }
 
     public func check(_ input: CheckInput) async throws -> [String: Any] {
-        let modules = modules(for: input.preset)
+        let plan = try Self.plan(for: input.preset)
+        let modules = plan.modules
         let created = try await post("/v1/sessions", [
-            "type": sessionType(for: input.preset),
+            "type": plan.sessionType,
             "user_id": input.userId ?? "",
             "modules": modules,
             "metadata": ["surface": "ios", "preset": input.preset],
@@ -130,18 +131,27 @@ public final class TrustLayerClient {
         return json ?? [:]
     }
 
-    private func sessionType(for preset: String) -> String {
-        switch preset {
-        case "login", "payment": return "authentication"
-        case "signup", "review": return "onboarding"
-        default: return "interview"
-        }
+    /// Same plans as src/presets.ts after modulesForThreats in src/check.ts.
+    public struct PresetPlan {
+        public let sessionType: String
+        public let modules: [String]
+        public let media: Bool
     }
 
-    private func modules(for preset: String) -> [String] {
+    public static func plan(for preset: String) throws -> PresetPlan {
         switch preset {
-        case "signup", "login", "payment", "review": return ["bot", "fraud"]
-        default: return ["interview", "deepfake", "bot"]
+        case "signup":
+            return PresetPlan(sessionType: "user_verification", modules: ["bot", "fraud", "anomaly"], media: false)
+        case "login":
+            return PresetPlan(sessionType: "authentication", modules: ["bot", "fraud", "anomaly"], media: false)
+        case "call":
+            return PresetPlan(sessionType: "interview", modules: ["interview", "deepfake", "bot"], media: true)
+        case "payment":
+            return PresetPlan(sessionType: "transaction", modules: ["fraud", "anomaly", "bot"], media: false)
+        case "review":
+            return PresetPlan(sessionType: "user_verification", modules: ["spam", "bot"], media: false)
+        default:
+            throw TrustLayerError("unknown preset: \(preset)")
         }
     }
 }

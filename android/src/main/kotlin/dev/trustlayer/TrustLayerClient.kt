@@ -30,11 +30,12 @@ class TrustLayerClient(
     )
 
     fun check(input: CheckInput): JSONObject {
-        val modules = modules(input.preset)
+        val plan = plan(input.preset)
+        val modules = plan.modules
         val created = post(
             "/v1/sessions",
             JSONObject()
-                .put("type", sessionType(input.preset))
+                .put("type", plan.sessionType)
                 .put("user_id", input.userId ?: "")
                 .put("modules", JSONArray(modules))
                 .put(
@@ -111,14 +112,15 @@ class TrustLayerClient(
         return if (text.isBlank()) JSONObject() else JSONObject(text)
     }
 
-    private fun sessionType(preset: String): String = when (preset) {
-        "login", "payment" -> "authentication"
-        "signup", "review" -> "onboarding"
-        else -> "interview"
-    }
+    /** Same plans as src/presets.ts after modulesForThreats in src/check.ts. */
+    data class PresetPlan(val sessionType: String, val modules: List<String>, val media: Boolean)
 
-    private fun modules(preset: String): List<String> = when (preset) {
-        "signup", "login", "payment", "review" -> listOf("bot", "fraud")
-        else -> listOf("interview", "deepfake", "bot")
+    fun plan(preset: String): PresetPlan = when (preset) {
+        "signup" -> PresetPlan("user_verification", listOf("bot", "fraud", "anomaly"), false)
+        "login" -> PresetPlan("authentication", listOf("bot", "fraud", "anomaly"), false)
+        "call" -> PresetPlan("interview", listOf("interview", "deepfake", "bot"), true)
+        "payment" -> PresetPlan("transaction", listOf("fraud", "anomaly", "bot"), false)
+        "review" -> PresetPlan("user_verification", listOf("spam", "bot"), false)
+        else -> error("unknown preset: $preset")
     }
 }
