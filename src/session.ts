@@ -37,6 +37,8 @@ export interface VerifyHumanOptions {
   liveness?: boolean;
   video?: boolean;
   audio?: boolean;
+  /** Consented reference portrait. The server compares it to the liveness crop. */
+  referenceImageB64?: string;
   /** Must be true (or confirmed via onConsent) before camera/mic. */
   consent?: boolean;
   onConsent?: () => boolean | Promise<boolean>;
@@ -253,7 +255,19 @@ export class TrustSession {
     });
   }
 
+  /** Store a reference portrait. Match score is set only after the ML service compares crops. */
+  async enrollReference(imageB64: string): Promise<void> {
+    await this.trackEvent("face_reference", {
+      image_b64: imageB64,
+      consent: true,
+    });
+    await this.emitter.flush();
+  }
+
   async verifyHuman(options: VerifyHumanOptions = {}): Promise<EvaluationResponse> {
+    if (options.referenceImageB64) {
+      await this.enrollReference(options.referenceImageB64);
+    }
     const attached = Boolean(options.source);
     const liveness = attached ? options.liveness === true : options.liveness !== false;
     const video = options.video !== false;

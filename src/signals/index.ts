@@ -8,6 +8,7 @@ export {
   createMediaSampler,
   createMediaSamplerFrom,
   motionFromFrames,
+  motionFromSequence,
   isBrowser,
   type FrameSample,
   type MotionSummary,

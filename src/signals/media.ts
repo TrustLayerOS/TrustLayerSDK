@@ -19,6 +19,10 @@ export interface MotionSummary {
   left_right_delta: number;
   blink_delta: number;
   temporal_energy: number;
+  /** Frames sampled during the challenge. A still is 1. */
+  frame_count?: number;
+  /** Sum of frame-to-frame energy. A frozen photo stays near 0. */
+  path_energy?: number;
 }
 
 export type MediaSource = MediaStream | HTMLVideoElement | HTMLAudioElement;
@@ -355,6 +359,36 @@ function spectralBands(gray: Float32Array, width: number, height: number): numbe
   }
   if (total <= 0) return [0, 0, 0, 0];
   return bands.map((b) => b / total);
+}
+
+export function motionFromSequence(frames: FrameSample[]): MotionSummary {
+  if (frames.length < 2) {
+    return {
+      left_right_delta: 0,
+      blink_delta: 0,
+      temporal_energy: 0,
+      frame_count: frames.length,
+      path_energy: 0,
+    };
+  }
+  let lr = 0;
+  let blink = 0;
+  let energy = 0;
+  let steps = 0;
+  for (let i = 1; i < frames.length; i++) {
+    const step = motionFromFrames(frames[i - 1], frames[i]);
+    lr += step.left_right_delta;
+    blink += step.blink_delta;
+    energy += step.temporal_energy;
+    steps++;
+  }
+  return {
+    left_right_delta: lr / steps,
+    blink_delta: blink / steps,
+    temporal_energy: energy / steps,
+    frame_count: frames.length,
+    path_energy: energy,
+  };
 }
 
 export function motionFromFrames(prev: FrameSample, next: FrameSample): MotionSummary {

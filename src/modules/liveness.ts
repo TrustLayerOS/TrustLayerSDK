@@ -3,7 +3,7 @@ import {
   createMediaSampler,
   extractFrameFeatures,
   isBrowser,
-  motionFromFrames,
+  motionFromSequence,
   sleep,
   type FrameSample,
   type LivenessChallenge,
@@ -124,10 +124,18 @@ export async function runLivenessChallenge(
         challengeId: server?.challenge_id,
       });
 
-      const before = await sampler.sampleFrame();
-      await sleep(holdMs);
-      const after = await sampler.sampleFrame();
-      if (!before || !after) {
+      const frames: FrameSample[] = [];
+      const first = await sampler.sampleFrame();
+      if (first) frames.push(first);
+      const slices = 3;
+      const step = Math.max(200, Math.floor(holdMs / slices));
+      for (let s = 0; s < slices; s++) {
+        await sleep(step);
+        const next = await sampler.sampleFrame();
+        if (next) frames.push(next);
+      }
+      const after = frames[frames.length - 1];
+      if (!first || !after || frames.length < 2) {
         await session.trackEvent("liveness_challenge_failed", {
           challenge,
           challenge_id: server?.challenge_id,
@@ -141,8 +149,8 @@ export async function runLivenessChallenge(
         };
       }
 
-      const motion: MotionSummary = motionFromFrames(before, after);
-      const features = extractFrameFeatures(after, prev ?? before);
+      const motion: MotionSummary = motionFromSequence(frames);
+      const features = extractFrameFeatures(after, prev ?? first);
       prev = after;
 
       const ok = motionAgrees(challenge, motion);
@@ -183,6 +191,10 @@ export async function runLivenessChallenge(
 }
 
 function motionAgrees(challenge: LivenessChallenge, motion: MotionSummary): boolean {
+  const frames = motion.frame_count ?? 0;
+  const path = motion.path_energy ?? 0;
+  if (frames > 0 && frames < 3) return false;
+  if (frames >= 3 && path < 0.004) return false;
   switch (challenge) {
     case "look_left":
       return motion.left_right_delta < -0.012;
