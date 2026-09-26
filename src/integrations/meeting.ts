@@ -3,7 +3,9 @@ import type { TrustSession } from "../session";
 import {
   createMediaSamplerFrom,
   extractFrameFeatures,
+  frameDigest,
   isBrowser,
+  screenEdgeEnergy,
   type FrameSample,
   type MediaSource,
 } from "../signals/media";
@@ -90,6 +92,17 @@ export function enforceCallDecision(
  * Continuously sample a live call tile or recording and re-evaluate.
  * Use this from Zoom Video SDK, Daily, LiveKit, or the Meet sidecar demo.
  */
+/**
+ * Ask the user to share a Meet or Zoom window. Those apps do not hand tiles
+ * to a third-party page. The score is on the pixels the user shares.
+ */
+export async function captureMeetingWindow(): Promise<MediaStream> {
+  if (!isBrowser() || !navigator.mediaDevices?.getDisplayMedia) {
+    throw new Error("display_capture_unavailable");
+  }
+  return navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+}
+
 export async function attachToCall(
   options: AttachCallOptions
 ): Promise<CallWatchHandle> {
@@ -119,12 +132,18 @@ export async function attachToCall(
         if (frame) {
           const features = extractFrameFeatures(frame, prev);
           const jpeg = sampler.sampleJpeg();
+          const hash = frameDigest(frame.data, frame.width, frame.height);
+          const prevHash = prev ? frameDigest(prev.data, prev.width, prev.height) : "";
           await options.session.trackEvent("face_frame", {
             ml_features: features,
             image_b64: jpeg ?? undefined,
             participant_id: options.participantId,
             platform: options.platform ?? "generic",
             consent: true,
+            frame_hash: hash,
+            repeated_frame: hash !== "" && hash === prevHash,
+            screen_edge: screenEdgeEnergy(frame.data, frame.width, frame.height),
+            virtual_camera: sampler.virtualCamera(),
           });
           prev = frame;
         }

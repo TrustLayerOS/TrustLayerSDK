@@ -91,6 +91,7 @@
     <label class="btn">Load Meet / deepfake clip
       <input id="file" type="file" accept="video/*,audio/*" />
     </label>
+    <button id="shareWindow" class="primary">Share Meet or Zoom window</button>
     <button id="watchGuest" class="danger">Watch guest</button>
     <button id="watchVoice">Watch guest (voice only)</button>
     <button id="joinLive" class="primary">Join live</button>
@@ -179,6 +180,17 @@
       });
     }
 
+    document.getElementById("shareWindow").onclick = async () => {
+      try {
+        const stream = await TrustLayerSDK.captureMeetingWindow();
+        guest.srcObject = stream;
+        await guest.play();
+        log("Scoring the window you shared. Meet and Zoom still do not hand over their tiles.");
+        await watchGuest(false);
+      } catch (e) {
+        log(e.message || String(e));
+      }
+    };
     document.getElementById("watchGuest").onclick = () => watchGuest(false).catch((e) => log(e.message));
     document.getElementById("watchVoice").onclick = () => watchGuest(true).catch((e) => log(e.message));
 

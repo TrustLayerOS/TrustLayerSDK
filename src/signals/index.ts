@@ -11,6 +11,8 @@ export {
   createMediaSamplerFrom,
   motionFromFrames,
   motionFromSequence,
+  frameDigest,
+  screenEdgeEnergy,
   isBrowser,
   type FrameSample,
   type MotionSummary,

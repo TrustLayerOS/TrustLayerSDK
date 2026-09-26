@@ -20,7 +20,9 @@ import {
   createMediaSampler,
   createMediaSamplerFrom,
   extractFrameFeatures,
+  frameDigest,
   isBrowser,
+  screenEdgeEnergy,
   type FrameSample,
   type MediaSource,
 } from "./signals/media";
@@ -41,6 +43,10 @@ export interface VerifyHumanOptions {
   audio?: boolean;
   /** Consented reference portrait. The server compares it to the liveness crop. */
   referenceImageB64?: string;
+  /** Consented enrollment speech. Compared with a spectral embedding, not ECAPA. */
+  referenceAudioPcm?: number[];
+  /** 8000 for phone audio, 16000 for the browser mic. */
+  sampleRate?: number;
   /** Must be true (or confirmed via onConsent) before camera/mic. */
   consent?: boolean;
   onConsent?: () => boolean | Promise<boolean>;
@@ -299,6 +305,13 @@ export class TrustSession {
     if (options.referenceImageB64) {
       await this.enrollReference(options.referenceImageB64);
     }
+    if (options.referenceAudioPcm && options.referenceAudioPcm.length > 0) {
+      await this.trackEvent("speaker_reference", {
+        audio_pcm: options.referenceAudioPcm,
+        sample_rate: options.sampleRate ?? 16000,
+        consent: true,
+      });
+    }
     const attached = Boolean(options.source);
     const liveness = attached ? options.liveness === true : options.liveness !== false;
     const video = options.video !== false;
@@ -343,6 +356,8 @@ export class TrustSession {
             const frame = await sampler.sampleFrame();
             if (frame) {
               const features = extractFrameFeatures(frame, prev);
+              const hash = frameDigest(frame.data, frame.width, frame.height);
+              const prevHash = prev ? frameDigest(prev.data, prev.width, prev.height) : "";
               await this.trackEvent("face_frame", {
                 ml_features: features,
                 image_b64: sampler.sampleJpeg() ?? undefined,
@@ -350,6 +365,9 @@ export class TrustSession {
                 consent: true,
                 virtual_camera: sampler.virtualCamera(),
                 capture_label: sampler.virtualCamera() ? "virtual" : "",
+                frame_hash: hash,
+                repeated_frame: hash !== "" && hash === prevHash,
+                screen_edge: screenEdgeEnergy(frame.data, frame.width, frame.height),
               });
               prev = frame;
               capturedMedia = true;
@@ -360,7 +378,7 @@ export class TrustSession {
         if (audio) {
           const feats = await sampler.sampleAudio(1200);
           if (feats) {
-            const voice = { ml_features: feats, consent: true };
+            const voice = { ml_features: feats, consent: true, sample_rate: options.sampleRate ?? 16000 };
             await this.trackEvent("voice_liveness", voice);
             await this.trackEvent("voice_clone_risk", voice);
             capturedMedia = true;

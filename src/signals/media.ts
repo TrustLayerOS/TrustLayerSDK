@@ -205,6 +205,47 @@ export async function createMediaSamplerFrom(
   };
 }
 
+/** Compact digest of a frame. Two identical samples share a digest. */
+export function frameDigest(data: ArrayLike<number>, width: number, height: number): string {
+  let hash = 5381;
+  const pixels = width * height;
+  if (pixels === 0) return "0";
+  const step = Math.max(1, Math.floor(pixels / 64));
+  for (let p = 0; p < pixels; p += step) {
+    const i = p * 4;
+    const y = ((data[i] ?? 0) + (data[i + 1] ?? 0) + (data[i + 2] ?? 0)) / 3;
+    hash = (((hash << 5) + hash) + (y & 255)) | 0;
+  }
+  return (hash >>> 0).toString(16);
+}
+
+/**
+ * Sign changes along the top edge. A monitor replay often flickers there.
+ * Returns 0–1. This is a cue, not a screen detector network.
+ */
+export function screenEdgeEnergy(data: ArrayLike<number>, width: number, height: number): number {
+  if (width < 8 || height < 4) return 0;
+  let flips = 0;
+  let samples = 0;
+  const rows = Math.min(2, height);
+  for (let y = 0; y < rows; y++) {
+    let prev = 0;
+    for (let x = 1; x < width; x++) {
+      const i0 = (y * width + x - 1) * 4;
+      const i1 = (y * width + x) * 4;
+      const a = (data[i0] ?? 0) + (data[i0 + 1] ?? 0) + (data[i0 + 2] ?? 0);
+      const b = (data[i1] ?? 0) + (data[i1 + 1] ?? 0) + (data[i1 + 2] ?? 0);
+      const delta = b - a;
+      if (prev !== 0 && delta !== 0 && Math.sign(delta) !== Math.sign(prev) && Math.abs(delta) > 24) {
+        flips++;
+      }
+      if (Math.abs(delta) > 12) prev = delta;
+      samples++;
+    }
+  }
+  return Math.min(1, Math.round((flips / Math.max(1, samples)) * 4000) / 1000);
+}
+
 /**
  * 32-d forensic vector matching TrustLayerOS ml/detectors/forensics.py
  */

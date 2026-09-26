@@ -121,6 +121,7 @@ class TrustSession:
         image_b64: Optional[str] = None,
         audio_b64: Optional[str] = None,
         audio_pcm: Optional[list[float]] = None,
+        reference_audio_pcm: Optional[list[float]] = None,
         sample_rate: int = 16000,
         challenge: str = "external",
         motion: Optional[dict[str, Any]] = None,
@@ -135,7 +136,7 @@ class TrustSession:
         """
         needs_bio = any(
             x is not None
-            for x in (liveness_passed, video_features, audio_features, image_b64, audio_b64, audio_pcm)
+            for x in (liveness_passed, video_features, audio_features, image_b64, audio_b64, audio_pcm, reference_audio_pcm)
         )
         if needs_bio and not consent:
             from .exceptions import TrustLayerError
@@ -166,6 +167,11 @@ class TrustSession:
             self.track_event(
                 "face_frame",
                 {**payload, "ml_features": video_features or [], "image_b64": image_b64},
+            )
+        if reference_audio_pcm:
+            self.track_event(
+                "speaker_reference",
+                {**payload, "audio_pcm": reference_audio_pcm, "sample_rate": sample_rate},
             )
         if audio_features or audio_b64 or audio_pcm:
             audio_payload = {

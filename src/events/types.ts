@@ -23,6 +23,7 @@ export type EventType =
   | "face_reference"
   | "bot_challenge_passed"
   | "bot_challenge_failed"
+  | "speaker_reference"
   | "custom";
 
 export interface TrustEvent {

@@ -14,6 +14,13 @@ export interface MobileCheckOptions {
   text?: string;
   imageB64?: string;
   audioPcm?: number[];
+  /** 8000 for phone PCM, 16000 for a handset mic at the voice model rate. */
+  sampleRate?: number;
+  /** Consented enrollment speech. Server compares a spectral embedding, not ECAPA. */
+  referenceAudioPcm?: number[];
+  frameHash?: string;
+  repeatedFrame?: boolean;
+  screenEdge?: number;
   /** Same media events the browser sampler posts, collected by the native shell. */
   virtualCamera?: boolean;
   captureLabel?: string;
@@ -75,6 +82,9 @@ export function createMobileClient(options: MobileClientOptions) {
           consent: true,
           virtual_camera: Boolean(input.virtualCamera),
           capture_label: input.captureLabel ?? "",
+          frame_hash: input.frameHash,
+          repeated_frame: Boolean(input.repeatedFrame),
+          screen_edge: input.screenEdge,
         });
       }
       if (input.motion) {
@@ -83,9 +93,17 @@ export function createMobileClient(options: MobileClientOptions) {
           passed_client: true,
         });
       }
+      if (input.referenceAudioPcm && input.referenceAudioPcm.length > 0) {
+        await session.trackEvent("speaker_reference", {
+          audio_pcm: input.referenceAudioPcm,
+          sample_rate: input.sampleRate ?? 16000,
+          consent: true,
+        });
+      }
       if (input.audioPcm && input.audioPcm.length > 0) {
         await session.trackEvent("voice_liveness", {
           audio_pcm: input.audioPcm,
+          sample_rate: input.sampleRate ?? 16000,
           consent: true,
         });
       }

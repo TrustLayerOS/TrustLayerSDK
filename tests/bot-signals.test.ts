@@ -1,6 +1,6 @@
 import { automationFlags } from "../src/signals/device";
 import { summarizePointer } from "../src/signals/behavior";
-import { looksVirtual } from "../src/signals/media";
+import { frameDigest, looksVirtual, screenEdgeEnergy } from "../src/signals/media";
 import { SpamShield } from "../src/modules/spam";
 import { AgentShield } from "../src/modules/agent";
 
@@ -72,5 +72,28 @@ describe("pointer summary", () => {
       { x: 400, y: 0, t: 20 },
     ]);
     expect(summary.teleportGaps).toBe(1);
+  });
+});
+
+describe("screen injection cues", () => {
+  it("gives identical frames the same digest", () => {
+    const data = new Uint8Array(16 * 16 * 4).fill(40);
+    expect(frameDigest(data, 16, 16)).toBe(frameDigest(data, 16, 16));
+    const other = new Uint8Array(data);
+    other[0] = 200;
+    expect(frameDigest(other, 16, 16)).not.toBe(frameDigest(data, 16, 16));
+  });
+
+  it("raises screen-edge energy on a flickering top row", () => {
+    const width = 64;
+    const height = 8;
+    const data = new Uint8Array(width * height * 4);
+    for (let x = 0; x < width; x++) {
+      const v = x % 2 === 0 ? 255 : 0;
+      const i = x * 4;
+      data[i] = data[i + 1] = data[i + 2] = v;
+    }
+    expect(screenEdgeEnergy(data, width, height)).toBeGreaterThanOrEqual(0.65);
+    expect(screenEdgeEnergy(new Uint8Array(width * height * 4), width, height)).toBe(0);
   });
 });
