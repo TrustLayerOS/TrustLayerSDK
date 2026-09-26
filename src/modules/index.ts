@@ -5,3 +5,5 @@ export { DeepfakeShield, type DeepfakeVideoResult, type DeepfakeAudioResult } fr
 export { AnomalyShield, type AnomalyResult } from "./anomaly";
 export { runLivenessChallenge, type LivenessPrompt, type LivenessResult } from "./liveness";
 export { runBotChallenge } from "./botChallenge";
+export { SpamShield, type SpamShieldResult } from "./spam";
+export { AgentShield, type AgentShieldResult } from "./agent";

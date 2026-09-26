@@ -24,6 +24,8 @@ from .modules.interview import InterviewShield
 from .modules.bot import BotShield
 from .modules.anomaly import AnomalyShield
 from .modules.deepfake import DeepfakeShield
+from .modules.spam import SpamShield
+from .modules.agent import AgentShield
 
 
 class TrustLayer:
@@ -307,6 +309,14 @@ class TrustLayer:
     def deepfake(self, session: TrustSession) -> DeepfakeShield:
         """Return a DeepfakeShield bound to the given session."""
         return DeepfakeShield(session)
+
+    def spam(self, session: TrustSession) -> SpamShield:
+        """Return a SpamShield bound to the given session."""
+        return SpamShield(session)
+
+    def agent(self, session: TrustSession) -> AgentShield:
+        """Return an AgentShield bound to the given session."""
+        return AgentShield(session)
 
     def anomaly(self, session: TrustSession) -> AnomalyShield:
         """Return an AnomalyShield bound to the given session."""

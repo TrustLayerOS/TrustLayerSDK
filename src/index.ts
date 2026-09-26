@@ -28,6 +28,8 @@ export { DeepfakeShield }  from "./modules/deepfake";
 export { AnomalyShield }   from "./modules/anomaly";
 export { runLivenessChallenge } from "./modules/liveness";
 export { runBotChallenge } from "./modules/botChallenge";
+export { SpamShield } from "./modules/spam";
+export { AgentShield } from "./modules/agent";
 
 export type { FraudResult, FraudEvaluationContext }        from "./modules/fraud";
 export type { BotAnalysisResult }                          from "./modules/bot";
@@ -35,6 +37,8 @@ export type { InterviewIntegrityResult }                   from "./modules/inter
 export type { DeepfakeVideoResult, DeepfakeAudioResult }   from "./modules/deepfake";
 export type { AnomalyResult }                              from "./modules/anomaly";
 export type { LivenessPrompt, LivenessResult, LivenessChallenge } from "./modules/liveness";
+export type { SpamShieldResult } from "./modules/spam";
+export type { AgentShieldResult } from "./modules/agent";
 
 // ─── Events ───────────────────────────────────────────────────────────────────
 export { EventEmitter } from "./events/emitter";

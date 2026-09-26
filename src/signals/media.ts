@@ -32,7 +32,13 @@ export interface MediaSampler {
   sampleFrame(): Promise<FrameSample | null>;
   sampleJpeg(quality?: number): string | null;
   sampleAudio(durationMs?: number): Promise<number[] | null>;
+  /** True when the video track label looks like a virtual camera. */
+  virtualCamera(): boolean;
   stop(): void;
+}
+
+export function looksVirtual(label: string): boolean {
+  return /virtual|obs|manycam|snap camera|vcam|mmhmm/i.test(label);
 }
 
 export function isBrowser(): boolean {
@@ -141,6 +147,11 @@ export async function createMediaSamplerFrom(
         data: image.data,
         timestamp: Date.now(),
       };
+    },
+
+    virtualCamera(): boolean {
+      if (!stream) return false;
+      return stream.getVideoTracks().some((track) => looksVirtual(track.label));
     },
 
     sampleJpeg(quality = 0.85): string | null {

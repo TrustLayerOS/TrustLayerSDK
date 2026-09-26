@@ -38,6 +38,8 @@ from .modules import (
     DeepfakeShield,
     DeepfakeVideoResult,
     DeepfakeAudioResult,
+    SpamShield,
+    AgentShield,
 )
 
 __all__ = [
@@ -62,6 +64,8 @@ __all__ = [
     "DeepfakeShield",
     "DeepfakeVideoResult",
     "DeepfakeAudioResult",
+    "SpamShield",
+    "AgentShield",
 ]
 
 __version__ = "0.1.0"

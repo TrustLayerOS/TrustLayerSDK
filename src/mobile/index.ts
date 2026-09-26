@@ -14,6 +14,10 @@ export interface MobileCheckOptions {
   text?: string;
   imageB64?: string;
   audioPcm?: number[];
+  /** Same media events the browser sampler posts, collected by the native shell. */
+  virtualCamera?: boolean;
+  captureLabel?: string;
+  motion?: Record<string, number>;
   /**
    * Native app already completed WebAuthn / platform passkey.
    * challengeId must come from passkeyChallenge().
@@ -69,6 +73,14 @@ export function createMobileClient(options: MobileClientOptions) {
         await session.trackEvent("face_frame", {
           image_b64: input.imageB64,
           consent: true,
+          virtual_camera: Boolean(input.virtualCamera),
+          capture_label: input.captureLabel ?? "",
+        });
+      }
+      if (input.motion) {
+        await session.trackEvent("liveness_challenge_passed", {
+          motion: input.motion,
+          passed_client: true,
         });
       }
       if (input.audioPcm && input.audioPcm.length > 0) {

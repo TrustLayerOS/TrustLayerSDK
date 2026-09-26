@@ -1,5 +1,8 @@
 import { automationFlags } from "../src/signals/device";
 import { summarizePointer } from "../src/signals/behavior";
+import { looksVirtual } from "../src/signals/media";
+import { SpamShield } from "../src/modules/spam";
+import { AgentShield } from "../src/modules/agent";
 
 describe("automation environment", () => {
   it("flags webdriver even when other bits are quiet", () => {
@@ -33,6 +36,20 @@ describe("automation environment", () => {
       globals: {},
     });
     expect(flags.automation_framework).toBe(false);
+  });
+});
+
+describe("capture label", () => {
+  it("notices a virtual camera name", () => {
+    expect(looksVirtual("OBS Virtual Camera")).toBe(true);
+    expect(looksVirtual("FaceTime HD Camera")).toBe(false);
+  });
+});
+
+describe("spam and agent shields", () => {
+  it("exports the shield classes", () => {
+    expect(typeof SpamShield).toBe("function");
+    expect(typeof AgentShield).toBe("function");
   });
 });
 

@@ -348,6 +348,8 @@ export class TrustSession {
                 image_b64: sampler.sampleJpeg() ?? undefined,
                 sample_index: i,
                 consent: true,
+                virtual_camera: sampler.virtualCamera(),
+                capture_label: sampler.virtualCamera() ? "virtual" : "",
               });
               prev = frame;
               capturedMedia = true;

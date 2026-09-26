@@ -18,6 +18,8 @@ import { BotShield } from "./modules/bot";
 import { InterviewShield } from "./modules/interview";
 import { DeepfakeShield } from "./modules/deepfake";
 import { AnomalyShield } from "./modules/anomaly";
+import { SpamShield } from "./modules/spam";
+import { AgentShield } from "./modules/agent";
 import { Logger } from "./utils/logger";
 import {
   EvaluationResponse,
@@ -232,6 +234,16 @@ export class TrustLayer {
   /** Access Anomaly Shield for the given session. */
   anomaly(session: TrustSession): AnomalyShield {
     return new AnomalyShield(session);
+  }
+
+  /** Access Spam Shield for the given session. Marketplace stays unwired. */
+  spam(session: TrustSession): SpamShield {
+    return new SpamShield(session);
+  }
+
+  /** Access Agent Shield for the given session. */
+  agent(session: TrustSession): AgentShield {
+    return new AgentShield(session);
   }
 
   // ─── Static convenience ────────────────────────────────────────────────────
