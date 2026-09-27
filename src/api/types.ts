@@ -126,7 +126,7 @@ export interface EvaluationResponse {
   human_probability: number;
   deepfake_risk: number;
   integrity_score: number;
-  recommendation: "allow" | "monitor" | "verify" | "review" | "block";
+  recommendation: "allow" | "monitor" | "verify" | "review" | "restrict" | "block";
   reasons: string[];
   confidence: number;
   trust_score: TrustScoreResponse;

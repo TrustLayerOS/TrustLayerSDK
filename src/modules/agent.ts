@@ -15,11 +15,24 @@ export interface AgentShieldResult {
 export class AgentShield {
   constructor(private readonly session: TrustSession) {}
 
-  async evaluate(agentId: string, ownerOrg?: string): Promise<AgentShieldResult> {
-    await this.session.trackEvent("custom", {
-      agent_id: agentId,
-      owner_org: ownerOrg,
-    });
+  /**
+   * Records the page and the action. The server decides allow, restrict, or block.
+   * This does not send a decision.
+   */
+  async recordPage(page: string, action: string): Promise<void> {
+    await this.session.trackEvent("custom", { page, action });
+  }
+
+  async evaluate(agentId?: string, ownerOrg?: string, pageAction?: { page: string; action: string }): Promise<AgentShieldResult> {
+    if (pageAction?.page && pageAction?.action) {
+      await this.recordPage(pageAction.page, pageAction.action);
+    }
+    if (agentId) {
+      await this.session.trackEvent("custom", {
+        agent_id: agentId,
+        owner_org: ownerOrg,
+      });
+    }
     const evaluation = await this.session.evaluate(["agent", "bot", "spam"]);
     const agent = evaluation.modules?.agent;
     return {
