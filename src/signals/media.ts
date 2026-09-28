@@ -27,12 +27,23 @@ export interface MotionSummary {
 
 export type MediaSource = MediaStream | HTMLVideoElement | HTMLAudioElement;
 
+/** Voice model rates. Phone audio stays 8000; everything faster is 16000. */
+export type VoiceSampleRate = 8000 | 16000;
+
+export interface VoicePcmWindow {
+  audio_pcm: number[];
+  sample_rate: VoiceSampleRate;
+  audio_energy: number;
+}
+
 export interface MediaSampler {
   start(opts?: { audio?: boolean; video?: boolean }): Promise<void>;
   sampleFrame(): Promise<FrameSample | null>;
   sampleJpeg(quality?: number): string | null;
   sampleAudio(durationMs?: number): Promise<number[] | null>;
-  /** RMS of the last sampleAudio window. 0 until a sample exists. */
+  /** Short PCM window for the whole call. Null when the source has no audio. */
+  samplePcmWindow(durationMs?: number, sampleRate?: VoiceSampleRate): Promise<VoicePcmWindow | null>;
+  /** RMS of the last audio window. 0 until a sample exists. */
   lastAudioEnergy(): number;
   /** True when the video track label looks like a virtual camera. */
   virtualCamera(): boolean;
@@ -169,6 +180,21 @@ export async function createMediaSamplerFrom(
       return shot.toDataURL("image/jpeg", quality);
     },
 
+    async samplePcmWindow(durationMs = 1000, sampleRate: VoiceSampleRate = 16000): Promise<VoicePcmWindow | null> {
+      let audioStream = stream;
+      if (!audioStream && video) {
+        audioStream = captureElementStream(video);
+      }
+      if (!audioStream || audioStream.getAudioTracks().length === 0) return null;
+      const raw = await recordPcm(audioStream, durationMs);
+      if (!raw || raw.samples.length === 0) return null;
+      const native = canonicalSampleRate(raw.sampleRate);
+      const target: VoiceSampleRate = native === 8000 ? 8000 : sampleRate;
+      const window = asVoiceWindow(raw.samples, raw.sampleRate, target);
+      audioEnergy = window.audio_energy;
+      return window;
+    },
+
     async sampleAudio(durationMs = 800): Promise<number[] | null> {
       let audioStream = stream;
       if (!audioStream && video) {
@@ -249,6 +275,127 @@ export function mouthBandEnergy(prev: FrameSample, curr: FrameSample): number {
     }
   }
   return Math.min(1, Math.round((total / Math.max(1, samples) / 255) * 1000) / 1000);
+}
+
+export function canonicalSampleRate(rate: number): VoiceSampleRate {
+  if (!Number.isFinite(rate) || rate < 12000) return 8000;
+  return 16000;
+}
+
+/** Linear resample. Used so a call window is 8000 or 16000 Hz, not the device rate. */
+export function resampleLinear(input: ArrayLike<number>, fromRate: number, toRate: number): number[] {
+  if (input.length === 0) return [];
+  if (!Number.isFinite(fromRate) || !Number.isFinite(toRate) || fromRate === toRate || fromRate <= 0 || toRate <= 0) {
+    return Array.from(input);
+  }
+  const outLen = Math.max(1, Math.round((input.length * toRate) / fromRate));
+  const out = new Array<number>(outLen);
+  const scale = fromRate / toRate;
+  for (let i = 0; i < outLen; i++) {
+    const pos = i * scale;
+    const i0 = Math.min(input.length - 1, Math.floor(pos));
+    const i1 = Math.min(input.length - 1, i0 + 1);
+    const frac = pos - i0;
+    out[i] = (input[i0] ?? 0) * (1 - frac) + (input[i1] ?? 0) * frac;
+  }
+  return out;
+}
+
+export function asVoiceWindow(
+  pcm: ArrayLike<number>,
+  fromRate: number,
+  target?: VoiceSampleRate
+): VoicePcmWindow {
+  const sample_rate = target ?? canonicalSampleRate(fromRate);
+  const audio_pcm = fromRate === sample_rate ? Array.from(pcm) : resampleLinear(pcm, fromRate, sample_rate);
+  return {
+    audio_pcm,
+    sample_rate,
+    audio_energy: signalEnergy(audio_pcm),
+  };
+}
+
+let pcmWorkletUrl: string | null = null;
+
+function pcmWorkletModule(): string {
+  if (pcmWorkletUrl) return pcmWorkletUrl;
+  const code = `
+    class TLPcmCapture extends AudioWorkletProcessor {
+      process(inputs) {
+        const ch = inputs[0] && inputs[0][0];
+        if (ch && ch.length) this.port.postMessage(ch.slice(0));
+        return true;
+      }
+    }
+    registerProcessor("tl-pcm-capture", TLPcmCapture);
+  `;
+  pcmWorkletUrl = URL.createObjectURL(new Blob([code], { type: "application/javascript" }));
+  return pcmWorkletUrl;
+}
+
+async function recordPcm(
+  stream: MediaStream,
+  durationMs: number
+): Promise<{ samples: number[]; sampleRate: number } | null> {
+  const AudioCtx =
+    window.AudioContext ||
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!AudioCtx) return null;
+  const ctx = new AudioCtx();
+  const source = ctx.createMediaStreamSource(stream);
+  const mute = ctx.createGain();
+  mute.gain.value = 0;
+  const chunks: Float32Array[] = [];
+  let node: AudioNode | null = null;
+  try {
+    if (ctx.audioWorklet) {
+      await ctx.audioWorklet.addModule(pcmWorkletModule());
+      const worklet = new AudioWorkletNode(ctx, "tl-pcm-capture");
+      worklet.port.onmessage = (ev: MessageEvent<Float32Array>) => {
+        const data = ev.data;
+        if (data?.length) chunks.push(new Float32Array(data));
+      };
+      source.connect(worklet);
+      worklet.connect(mute);
+      node = worklet;
+    }
+  } catch {
+    node = null;
+    chunks.length = 0;
+  }
+  if (!node && typeof ctx.createScriptProcessor === "function") {
+    const processor = ctx.createScriptProcessor(4096, 1, 1);
+    processor.onaudioprocess = (event) => {
+      chunks.push(new Float32Array(event.inputBuffer.getChannelData(0)));
+    };
+    source.connect(processor);
+    processor.connect(mute);
+    node = processor;
+  }
+  if (!node) {
+    await ctx.close();
+    return null;
+  }
+  mute.connect(ctx.destination);
+  await sleep(Math.max(200, durationMs));
+  if ("onaudioprocess" in node) {
+    (node as ScriptProcessorNode).onaudioprocess = null;
+  }
+  if (node instanceof AudioWorkletNode) {
+    node.port.onmessage = null;
+  }
+  node.disconnect();
+  mute.disconnect();
+  source.disconnect();
+  const sampleRate = ctx.sampleRate;
+  await ctx.close();
+  const total = chunks.reduce((n, chunk) => n + chunk.length, 0);
+  const samples = new Array<number>(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    for (let i = 0; i < chunk.length; i++) samples[offset++] = chunk[i] ?? 0;
+  }
+  return { samples, sampleRate };
 }
 
 export function signalEnergy(time: ArrayLike<number>): number {

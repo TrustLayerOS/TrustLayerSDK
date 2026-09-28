@@ -1,7 +1,9 @@
 import type { EvaluationResponse } from "../api/types";
+import type { EventType } from "../events/types";
 import type { TrustSession } from "../session";
 import {
   createMediaSamplerFrom,
+  extractAudioFeatures,
   extractFrameFeatures,
   flowEnergy,
   frameDigest,
@@ -9,7 +11,10 @@ import {
   mouthBandEnergy,
   screenEdgeEnergy,
   type FrameSample,
+  type MediaSampler,
   type MediaSource,
+  type VoicePcmWindow,
+  type VoiceSampleRate,
 } from "../signals/media";
 import { assertMediaConsent } from "../privacy";
 
@@ -42,9 +47,20 @@ export interface AttachCallOptions {
   audio?: boolean;
   /** How often to sample + evaluate. Default 2500ms. */
   intervalMs?: number;
+  /** 8000 for phone audio, 16000 for a computer mic. Default 16000. */
+  sampleRate?: VoiceSampleRate;
   /** Mute / blur the source when recommendation is block. */
   autoRemove?: boolean;
   onDecision?: (result: EvaluationResponse) => void;
+}
+
+/** What one tick of a sidecar watch can see. Tests drive this without a browser. */
+export interface CallLoopSampler {
+  sampleFrame(): Promise<FrameSample | null>;
+  sampleJpeg(): string | null;
+  virtualCamera(): boolean;
+  sampleVoiceWindow(): Promise<VoicePcmWindow | null>;
+  stop(): void;
 }
 
 export interface CallWatchHandle {
@@ -105,35 +121,64 @@ export async function captureMeetingWindow(): Promise<MediaStream> {
   return navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
 }
 
-export async function attachToCall(
-  options: AttachCallOptions
-): Promise<CallWatchHandle> {
-  assertMediaConsent(options.consent);
-  if (!isBrowser()) {
-    throw new Error("attach_to_call requires a browser");
-  }
+function loopSampler(sampler: MediaSampler, sampleRate: VoiceSampleRate, intervalMs: number): CallLoopSampler {
+  const windowMs = Math.min(1200, Math.max(400, intervalMs));
+  return {
+    sampleFrame: () => sampler.sampleFrame(),
+    sampleJpeg: () => sampler.sampleJpeg(),
+    virtualCamera: () => sampler.virtualCamera(),
+    sampleVoiceWindow: () => sampler.samplePcmWindow(windowMs, sampleRate),
+    stop: () => sampler.stop(),
+  };
+}
 
-  const video = options.video !== false;
-  const audio = options.audio !== false;
-  const intervalMs = options.intervalMs ?? 2500;
+/**
+ * Keep posting a short PCM window until stop(). The sidecar and attachToCall
+ * share this loop. Each voice event carries audio_pcm, sample_rate, and audio_energy.
+ */
+export interface CallWatchSession {
+  readonly sessionId: string;
+  trackEvent(type: EventType, data?: Record<string, unknown>): Promise<void>;
+  evaluate(modules?: string[]): Promise<EvaluationResponse>;
+}
 
-  const sampler = await createMediaSamplerFrom(options.source);
-  await sampler.start({ video, audio });
-
+export function startAttachLoop(options: {
+  session: CallWatchSession;
+  sampler: CallLoopSampler;
+  video: boolean;
+  audio: boolean;
+  intervalMs: number;
+  participantId?: string;
+  platform?: CallPlatform;
+  autoRemove?: boolean;
+  source?: MediaSource;
+  onDecision?: (result: EvaluationResponse) => void;
+}): CallWatchHandle {
   let stopped = false;
   let last: EvaluationResponse | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let prev: FrameSample | null = null;
   let consecutiveFailures = 0;
 
+  const voicePayload = (window: VoicePcmWindow) => ({
+    audio_pcm: window.audio_pcm,
+    sample_rate: window.sample_rate,
+    audio_energy: window.audio_energy,
+    ml_features: extractAudioFeatures(window.audio_pcm),
+    participant_id: options.participantId,
+    platform: options.platform ?? "generic",
+    consent: true,
+  });
+
   const tick = async () => {
     if (stopped) return;
     try {
-      if (video) {
-        const frame = await sampler.sampleFrame();
+      if (options.video) {
+        const frame = await options.sampler.sampleFrame();
+        if (stopped) return;
         if (frame) {
           const features = extractFrameFeatures(frame, prev);
-          const jpeg = sampler.sampleJpeg();
+          const jpeg = options.sampler.sampleJpeg();
           const hash = frameDigest(frame.data, frame.width, frame.height);
           const prevHash = prev ? frameDigest(prev.data, prev.width, prev.height) : "";
           await options.session.trackEvent("face_frame", {
@@ -147,41 +192,36 @@ export async function attachToCall(
             screen_edge: screenEdgeEnergy(frame.data, frame.width, frame.height),
             flow_energy: prev ? flowEnergy(prev, frame) : undefined,
             mouth_energy: prev ? mouthBandEnergy(prev, frame) : undefined,
-            virtual_camera: sampler.virtualCamera(),
+            virtual_camera: options.sampler.virtualCamera(),
           });
           prev = frame;
         }
       }
-      if (audio) {
-        const feats = await sampler.sampleAudio(500);
-        if (feats) {
-          await options.session.trackEvent("voice_liveness", {
-            ml_features: feats,
-            participant_id: options.participantId,
-            platform: options.platform ?? "generic",
-            consent: true,
-            audio_energy: sampler.lastAudioEnergy(),
-          });
-          await options.session.trackEvent("voice_clone_risk", {
-            ml_features: feats,
-            participant_id: options.participantId,
-            consent: true,
-            audio_energy: sampler.lastAudioEnergy(),
-          });
+      if (options.audio) {
+        const voice = await options.sampler.sampleVoiceWindow();
+        if (stopped) return;
+        if (voice && (voice.sample_rate === 8000 || voice.sample_rate === 16000)) {
+          const payload = voicePayload(voice);
+          await options.session.trackEvent("voice_liveness", payload);
+          if (stopped) return;
+          await options.session.trackEvent("voice_clone_risk", payload);
         }
       }
+      if (stopped) return;
 
       const result = await options.session.evaluate(["interview", "deepfake", "bot"]);
+      if (stopped) return;
       consecutiveFailures = 0;
       last = result;
       options.onDecision?.(result);
-      if (options.autoRemove && shouldRemoveParticipant(result.recommendation)) {
+      if (options.autoRemove && options.source && shouldRemoveParticipant(result.recommendation)) {
         enforceCallDecision(options.source, result.recommendation);
         stopped = true;
-        sampler.stop();
+        options.sampler.stop();
         return;
       }
     } catch (err) {
+      if (stopped) return;
       consecutiveFailures += 1;
       options.onDecision?.({
         session_id: options.session.sessionId,
@@ -197,14 +237,14 @@ export async function attachToCall(
       });
       if (consecutiveFailures >= 3) {
         stopped = true;
-        sampler.stop();
+        options.sampler.stop();
         return;
       }
     }
     if (!stopped) {
       timer = setTimeout(() => {
         void tick();
-      }, intervalMs);
+      }, options.intervalMs);
     }
   };
 
@@ -214,8 +254,38 @@ export async function attachToCall(
     stop() {
       stopped = true;
       if (timer) clearTimeout(timer);
-      sampler.stop();
+      options.sampler.stop();
     },
     lastResult: () => last,
   };
+}
+
+export async function attachToCall(
+  options: AttachCallOptions
+): Promise<CallWatchHandle> {
+  assertMediaConsent(options.consent);
+  if (!isBrowser()) {
+    throw new Error("attach_to_call requires a browser");
+  }
+
+  const video = options.video !== false;
+  const audio = options.audio !== false;
+  const intervalMs = options.intervalMs ?? 2500;
+  const sampleRate = options.sampleRate ?? 16000;
+
+  const sampler = await createMediaSamplerFrom(options.source);
+  await sampler.start({ video, audio });
+
+  return startAttachLoop({
+    session: options.session,
+    sampler: loopSampler(sampler, sampleRate, intervalMs),
+    video,
+    audio,
+    intervalMs,
+    participantId: options.participantId,
+    platform: options.platform,
+    autoRemove: options.autoRemove,
+    source: options.source,
+    onDecision: options.onDecision,
+  });
 }
