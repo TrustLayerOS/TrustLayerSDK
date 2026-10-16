@@ -87,7 +87,10 @@ class TrustLayerClient(
                 )
             }
         }
-        return post("/v1/sessions/$sessionId/evaluate", JSONObject().put("modules", JSONArray(modules)))
+        return post(
+            "/v1/evaluate",
+            JSONObject().put("session_id", sessionId).put("modules", JSONArray(modules)),
+        )
     }
 
     private fun event(sessionId: String, type: String, data: JSONObject) {

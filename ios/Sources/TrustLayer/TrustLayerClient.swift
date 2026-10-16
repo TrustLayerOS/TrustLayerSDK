@@ -101,7 +101,10 @@ public final class TrustLayerClient {
                 "consent": true,
             ])
         }
-        return try await post("/v1/sessions/\(sessionId)/evaluate", ["modules": modules])
+        return try await post("/v1/evaluate", [
+            "session_id": sessionId,
+            "modules": modules,
+        ])
     }
 
     private func event(_ sessionId: String, _ type: String, _ data: [String: Any]) async throws {
