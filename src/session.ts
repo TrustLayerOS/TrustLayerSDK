@@ -416,10 +416,12 @@ export class TrustSession {
         );
       }
     } else if ((video || audio) && !isBrowser()) {
-      await this.trackEvent("custom", {
-        signal_type: "verify_human",
-        note: "media capture requires a browser; send face_frame / voice_liveness events from your app",
-      });
+      throw new TrustLayerError(
+        "media capture requires a browser; post face_frame / voice_liveness events from your app, or set video/audio false for signal-only checks",
+        403,
+        "insufficient_media",
+        true
+      );
     }
 
     return this.evaluate(options.modules ?? ["interview", "deepfake", "bot"]);

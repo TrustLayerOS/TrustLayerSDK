@@ -1,3 +1,4 @@
+import { TrustLayerError } from "../api/types";
 import { TrustSession } from "../session";
 import {
   createMediaSampler,
@@ -71,9 +72,22 @@ export async function runLivenessChallenge(
         opts.sequence?.length ?? 3
       );
       serverChallenges = issued.challenges ?? [];
-    } catch {
-      // Fall back to local sequence only when the OS challenge API is unavailable.
-      serverChallenges = [];
+    } catch (err) {
+      // Fail closed: unbound local sequences are rejected by a wired OS challenge issuer.
+      throw new TrustLayerError(
+        err instanceof Error ? err.message : "liveness challenge API unavailable",
+        503,
+        "challenge_unavailable",
+        true
+      );
+    }
+    if (serverChallenges.length === 0) {
+      throw new TrustLayerError(
+        "liveness challenge API returned no challenges",
+        503,
+        "challenge_unavailable",
+        true
+      );
     }
   }
 

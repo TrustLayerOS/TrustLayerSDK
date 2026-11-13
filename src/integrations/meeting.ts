@@ -52,6 +52,8 @@ export interface AttachCallOptions {
   /** Mute / blur the source when recommendation is block. */
   autoRemove?: boolean;
   onDecision?: (result: EvaluationResponse) => void;
+  /** Fired on watcher/network errors — distinct from a deepfake block decision. */
+  onError?: (err: unknown) => void;
 }
 
 /** What one tick of a sidecar watch can see. Tests drive this without a browser. */
@@ -153,6 +155,7 @@ export function startAttachLoop(options: {
   autoRemove?: boolean;
   source?: MediaSource;
   onDecision?: (result: EvaluationResponse) => void;
+  onError?: (err: unknown) => void;
 }): CallWatchHandle {
   let stopped = false;
   let last: EvaluationResponse | null = null;
@@ -223,17 +226,30 @@ export function startAttachLoop(options: {
     } catch (err) {
       if (stopped) return;
       consecutiveFailures += 1;
+      options.onError?.(err);
+      // Do not pretend a watcher/network failure is a deepfake block.
       options.onDecision?.({
         session_id: options.session.sessionId,
-        human_probability: 0,
-        deepfake_risk: 1,
-        integrity_score: 0,
-        recommendation: "block",
+        human_probability: last?.human_probability ?? 0.5,
+        deepfake_risk: last?.deepfake_risk ?? 0,
+        integrity_score: last?.integrity_score ?? 50,
+        recommendation: "monitor",
         reasons: ["watcher_error", err instanceof Error ? err.message : "unknown"],
         confidence: 0,
-        trust_score: { trust_score: 0, confidence: 0, status: "high_risk", reasons: [] },
-        risk_score: { risk_score: 100, level: "critical", factors: [], confidence: 0, primary_factors: [] },
-        explanation: [],
+        trust_score: last?.trust_score ?? {
+          trust_score: 50,
+          confidence: 0,
+          status: "suspicious",
+          reasons: ["watcher_error"],
+        },
+        risk_score: last?.risk_score ?? {
+          risk_score: 40,
+          level: "moderate",
+          factors: ["watcher_error"],
+          confidence: 0,
+          primary_factors: ["watcher_error"],
+        },
+        explanation: ["Live watcher error — not a media detection decision"],
       });
       if (consecutiveFailures >= 3) {
         stopped = true;
@@ -287,5 +303,6 @@ export async function attachToCall(
     autoRemove: options.autoRemove,
     source: options.source,
     onDecision: options.onDecision,
+    onError: options.onError,
   });
 }

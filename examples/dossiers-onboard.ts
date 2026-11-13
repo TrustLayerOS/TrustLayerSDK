@@ -9,6 +9,9 @@
  *   npx ts-node examples/dossiers-onboard.ts
  *
  * Optional: TRUSTLAYER_IMAGE_B64 / TRUSTLAYER_AUDIO_PCM_JSON for real media.
+ *
+ * Note: omit userId (or grant stored biometric consent) — when a subject id is set,
+ * TrustLayerOS requires a consent ledger grant, not only event.consent=true.
  */
 
 import { TrustLayer } from "../src";
@@ -57,9 +60,10 @@ async function main() {
     modules: ["deepfake", "interview", "bot"],
   });
 
+  // No userId: attested consent:true on events is enough for dashboard/demo scenes.
+  // Production Onboard subjects should grant biometric consent via /v1/compliance/consent first.
   const session = await tl.createSession({
     type: "user_verification",
-    userId: "dossiers_applicant_demo",
     modules: ["deepfake", "interview", "bot"],
     metadata: {
       partner: "dossiers",
@@ -72,15 +76,10 @@ async function main() {
 
   console.log(`session ${session.id}`);
 
-  // Liveness challenge binding (server challenge_id required for pass events).
-  let challenge:
-    | { challenge_id: string; action: string }
-    | undefined;
-  try {
-    const issued = await session.issueLivenessChallenge(3);
-    challenge = issued.challenges?.[0];
-  } catch (err) {
-    console.warn("liveness challenge unavailable:", err);
+  const issued = await session.issueLivenessChallenge(3);
+  const challenge = issued.challenges?.[0];
+  if (!challenge?.challenge_id) {
+    throw new Error("liveness challenge API returned no challenge_id — refuse soft fallback");
   }
 
   const imageB64 = process.env["TRUSTLAYER_IMAGE_B64"];
@@ -89,17 +88,13 @@ async function main() {
     ...(imageB64 ? { image_b64: imageB64 } : { ml_features: demoFrameFeatures(0.12) }),
   });
 
-  if (challenge) {
-    await session.trackEvent("liveness_passed", {
-      consent: true,
-      challenge_id: challenge.challenge_id,
-      challenge: challenge.action,
-      passed_client: true,
-      ...(imageB64 ? { image_b64: imageB64 } : {}),
-    });
-  }
-
-  await session.flushEvents();
+  await session.trackEvent("liveness_challenge_passed", {
+    consent: true,
+    challenge_id: challenge.challenge_id,
+    challenge: challenge.action,
+    passed_client: true,
+    ...(imageB64 ? { image_b64: imageB64 } : {}),
+  });
 
   const pcmEnv = process.env["TRUSTLAYER_AUDIO_PCM_JSON"];
   const pcm = pcmEnv ? (JSON.parse(pcmEnv) as number[]) : tonePCM(16000, 0.25);
@@ -109,6 +104,8 @@ async function main() {
     sample_rate: 16000,
     audio_energy: 0.12,
   });
+
+  await session.flushEvents();
 
   // complete = evaluate + session.completed webhook
   const result = await session.complete();
@@ -127,7 +124,6 @@ async function main() {
   console.log(`  reasons:            ${(result.reasons ?? []).slice(0, 4).join("; ") || "(none)"}`);
   console.log("──────────────────────────────────────────────────────────\n");
 
-  // Shape a partner would persist next to their Onboard case.
   console.log(
     JSON.stringify(
       {

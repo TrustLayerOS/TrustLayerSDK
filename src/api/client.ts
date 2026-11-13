@@ -49,8 +49,29 @@ export class ApiClient {
     return this.request<SendEventResponse>("POST", "/v1/events", req, { biometric: true });
   }
 
-  async sendEventBatch(events: SendEventRequest[]): Promise<{ accepted_count: number; event_ids: string[] }> {
-    return this.request("POST", "/v1/events/batch", { events }, { biometric: true });
+  async sendEventBatch(events: SendEventRequest[]): Promise<{
+    accepted_count: number;
+    event_ids: string[];
+    failures?: Array<{ index?: number; error?: string; message?: string }>;
+  }> {
+    const res = await this.request<{
+      accepted_count: number;
+      event_ids: string[];
+      failures?: Array<{ index?: number; error?: string; message?: string }>;
+    }>("POST", "/v1/events/batch", { events }, { biometric: true });
+    if (res.failures && res.failures.length > 0) {
+      const codes = res.failures
+        .map((f) => f.error || f.message || "event_rejected")
+        .slice(0, 4)
+        .join(", ");
+      throw new TrustLayerError(
+        `batch rejected ${res.failures.length} event(s): ${codes}`,
+        400,
+        "event_batch_partial_failure",
+        true
+      );
+    }
+    return res;
   }
 
   async issuePasskeyChallenge(sessionId: string): Promise<{
