@@ -409,18 +409,30 @@ import {
   WEBHOOK_TIMESTAMP_HEADER,
 } from "@trustlayer/sdk"
 
-const ok = verifyWebhookSignature({
-  secret: process.env.TRUSTLAYER_WEBHOOK_SECRET!,
-  rawBody,
-  signatureHeader: req.header(WEBHOOK_SIGNATURE_HEADER)!,
-  timestampHeader: req.header(WEBHOOK_TIMESTAMP_HEADER)!,
-  maxAgeSeconds: 300,
-})
+// Positional args (not an options object):
+const ok = await verifyWebhookSignature(
+  rawBody,                                          // string payload
+  req.header(WEBHOOK_SIGNATURE_HEADER)!,            // sha256=<hex>
+  process.env.TRUSTLAYER_WEBHOOK_SECRET!,
+  req.header(WEBHOOK_TIMESTAMP_HEADER)!,            // unix seconds
+  300                                               // optional max age
+)
 ```
 
 Scheme: `HMAC-SHA256(secret, timestamp + "." + rawBody)` → header `X-TrustLayer-Signature: sha256=<hex>`.
 
-Register endpoints with `tl.registerWebhook({ url, events })` (secret key).
+Events you can subscribe to: `session.completed`, `evaluation.completed`, `risk.detected` (or `*` / empty = all).
+
+Register with the secret key:
+
+```ts
+await tl.registerWebhook("https://your.app/hooks/trustlayer", [
+  "session.completed",
+  "evaluation.completed",
+])
+```
+
+Prefer `session.complete()` when the video check ends (fires `session.completed`). Use bare `evaluate` + `evaluation.completed` for mid-flow async scoring.
 
 ---
 

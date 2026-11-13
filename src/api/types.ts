@@ -84,6 +84,9 @@ export interface EvaluationModules {
     replay_risk?: number;
     voice_clone_risk?: number;
     liveness_passed?: boolean;
+    face_match?: number;
+    /** onnx | heuristic_fallback | mixed — reject heuristic_fallback in partner demos */
+    implementation?: string;
     reasons?: string[];
   };
   bot?: {
@@ -111,6 +114,8 @@ export interface EvaluationModules {
     action: string;
   };
   agent?: {
+    /** Always "heuristic" until a labeled agent model ships */
+    implementation?: string;
     trust_score: number;
     is_authorized: boolean;
     owner_verified: boolean;
@@ -119,6 +124,13 @@ export interface EvaluationModules {
     recommendation: string;
     signals: string[];
   };
+}
+
+/** How a top-level evaluate field was produced (onnx / calibrated_tabular / rule / heuristic_fallback). */
+export interface FieldProvenance {
+  field: string;
+  source: string;
+  note: string;
 }
 
 export interface EvaluationResponse {
@@ -134,6 +146,8 @@ export interface EvaluationResponse {
   explanation: string[];
   policy_actions?: string[];
   modules?: EvaluationModules;
+  field_provenance?: FieldProvenance[];
+  shadow_scores?: Record<string, unknown>;
   created_at?: string;
 }
 
@@ -176,11 +190,19 @@ export interface WebhookEndpoint {
 export class TrustLayerError extends Error {
   public readonly statusCode: number;
   public readonly errorCode: string;
+  /** When true, ApiClient retry must not re-attempt (typically HTTP 4xx). */
+  public readonly noRetry: boolean;
 
-  constructor(message: string, statusCode: number, errorCode: string) {
+  constructor(
+    message: string,
+    statusCode: number,
+    errorCode: string,
+    noRetry = false
+  ) {
     super(message);
     this.name = "TrustLayerError";
     this.statusCode = statusCode;
     this.errorCode = errorCode;
+    this.noRetry = noRetry;
   }
 }

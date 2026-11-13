@@ -72,6 +72,7 @@ export type {
   TrustScoreResponse,
   RiskScoreResponse,
   EvaluationResponse,
+  FieldProvenance,
   CreateSessionRequest,
   CreateSessionResponse,
   EvaluationModules,

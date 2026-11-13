@@ -113,6 +113,13 @@ async function handleIncomingWebhook(
       // → Store result, update user risk profile, etc.
       break;
 
+    case "evaluation.completed":
+      console.log(
+        `  Evaluate finished. Recommendation: ${payload.data["recommendation"]} deepfake_risk=${payload.data["deepfake_risk"]}`
+      );
+      // → Mid-flow async scoring without closing the session
+      break;
+
     case "policy.action":
       console.log(`  Policy triggered action: ${payload.data["action"]}`);
       // → Execute the policy action in your system

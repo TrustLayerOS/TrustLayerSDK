@@ -201,9 +201,12 @@ export class ApiClient {
               );
             }
 
-            throw Object.assign(
-              new TrustLayerError(errorData.message, res.status, errorData.error),
-              { noRetry: true }
+            // 4xx: fail closed immediately — do not burn retries on consent / auth / validation.
+            throw new TrustLayerError(
+              errorData.message,
+              res.status,
+              errorData.error,
+              true
             );
           }
 
